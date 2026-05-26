@@ -18,9 +18,21 @@ const HEAT_URL =
 // Heat island — all red, opacity by temperature
 function heatStyle(feature) {
   const temp = feature.properties.SurfTemp_Tess_MEAN ?? 20;
-  const min = 20, max = 42;
-  const opacity = Math.min(0.75, Math.max(0.05, (temp - min) / (max - min) * 0.75));
-  return { fillColor: "#ef4444", fillOpacity: opacity, weight: 0, stroke: false };
+
+  // 3-tier color + opacity for clear contrast
+  let fillColor, fillOpacity;
+  if (temp >= 32) {
+    fillColor = "#8B0000";   // dark red — high heat (≥32°C)
+    fillOpacity = 0.80;
+  } else if (temp >= 28) {
+    fillColor = "#FF0000";   // red — medium heat (28–32°C)
+    fillOpacity = 0.55;
+  } else {
+    fillColor = "#f97316";   // orange — low heat (<28°C)
+    fillOpacity = 0.35;
+  }
+
+  return { fillColor, fillOpacity, weight: 0, stroke: false };
 }
 
 // Custom divIcon factory
@@ -116,14 +128,7 @@ export default function ShelterMarkers({ userLocation, onSheltersLoaded }) {
         zoomOffset={-1}
       />
 
-      {/* Ontario-wide temperature heatmap — OpenWeatherMap tile layer */}
-      <TileLayer
-        url={`https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${process.env.NEXT_PUBLIC_OPENWEATHER_KEY}`}
-        opacity={0.35}
-        zIndex={2}
-      />
-
-      {/* Toronto heat island layer — red, opacity by temperature (overlays OWM at zoom ≥ 10) */}
+      {/* Heat Island layer — red, opacity by temperature */}
       {heatData && (
         <GeoJSON key="heat" data={heatData} style={heatStyle} />
       )}

@@ -63,11 +63,12 @@ export default function Home() {
 
           {/* Legend */}
           <div className="flex flex-wrap justify-center gap-5 mb-8 text-xs text-gray-400">
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-500 opacity-80 inline-block"/><span>High Heat</span></span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-500 opacity-40 inline-block"/><span>Low Heat</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm inline-block" style={{backgroundColor:"#8B0000"}}/><span>High Heat ≥32°C</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm inline-block" style={{backgroundColor:"#FF0000"}}/><span>Medium Heat 28–32°C</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm inline-block" style={{backgroundColor:"#f97316"}}/><span>Low Heat &lt;28°C</span></span>
             <span className="flex items-center gap-1.5"><span>❄️</span><span>Cooling Centre</span></span>
             <span className="flex items-center gap-1.5"><span>📚</span><span>Library</span></span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-500 inline-block"/><span>You</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-400 inline-block"/><span>You</span></span>
           </div>
 
           {/* Temperature cards */}
