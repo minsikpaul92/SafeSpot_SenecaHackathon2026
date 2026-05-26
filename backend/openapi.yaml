@@ -3,8 +3,9 @@ info:
   title: SafeSpot Toronto — Sensor API
   description: |
     Real-time temperature sensor API for SafeSpot Toronto. Receives temperature data
-    from a Raspberry Pi sensor, evaluates danger levels based on Health Canada and
-    Toronto Public Health guidelines, and provides manual override for testing.
+    from a Raspberry Pi sensor, stores readings in SQLite, evaluates danger levels
+    based on Health Canada and Toronto Public Health guidelines, and provides
+    manual override for testing.
   version: 1.0.0
   contact:
     name: Team codeXperts
@@ -30,7 +31,8 @@ paths:
       summary: Receive temperature from Raspberry Pi
       description: |
         Stores a new temperature reading from the Raspberry Pi sensor, evaluates
-        the alert level based on danger thresholds, and persists to the database.
+        the alert level based on danger thresholds, and stores the reading in SQLite
+        with `source: sensor`.
       tags:
         - Sensor Data
       requestBody:
@@ -54,6 +56,8 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - status
                 properties:
                   status:
                     type: string
@@ -64,19 +68,15 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: "Missing required field: temperature"
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/sensor-latest:
     get:
       operationId: getSensorLatest
       summary: Get the latest temperature reading
       description: |
-        Returns the most recent temperature reading with its alert level and timestamp.
-        Used by the frontend to display live data on the dashboard.
+        Returns the most recent temperature reading from SQLite with its alert level,
+        timestamp, and source. Used by the frontend to display live data on the dashboard.
       tags:
         - Sensor Data
       responses:
@@ -85,13 +85,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SensorReading'
-        '204':
-          description: No readings have been recorded yet
-        '400':
-          description: Invalid request parameters
-        '500':
-          description: Server error retrieving latest reading
+                oneOf:
+                  - $ref: '#/components/schemas/SensorReading'
+                  - $ref: '#/components/schemas/EmptySensorReading'
 
   /api/sensor-override:
     post:
@@ -100,6 +96,7 @@ paths:
       description: |
         Allows testing without the physical sensor. Simulates a temperature reading
         by manually setting a value, useful for testing alert levels and frontend behavior.
+        Stores the reading in SQLite with `source: override`.
       tags:
         - Sensor Data
       requestBody:
@@ -123,6 +120,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - status
+                  - temperature
                 properties:
                   status:
                     type: string
@@ -137,17 +137,18 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: "Missing required field: temperature"
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   schemas:
     SensorReading:
       type: object
       description: Complete temperature reading with alert metadata
+      required:
+        - temperature
+        - timestamp
+        - source
+        - alert
       properties:
         temperature:
           type: number
@@ -159,8 +160,37 @@ components:
           format: date-time
           description: ISO 8601 timestamp when reading was recorded
           example: "2026-05-26T14:30:00.000Z"
+        source:
+          type: string
+          enum:
+            - sensor
+            - override
+          description: Indicates whether the reading came from the Raspberry Pi or a manual override
+          example: sensor
         alert:
           $ref: '#/components/schemas/AlertLevel'
+
+    EmptySensorReading:
+      type: object
+      description: Empty state returned when no temperature reading has been recorded yet
+      required:
+        - temperature
+        - timestamp
+        - source
+        - alert
+      properties:
+        temperature:
+          nullable: true
+          example: null
+        timestamp:
+          nullable: true
+          example: null
+        source:
+          nullable: true
+          example: null
+        alert:
+          nullable: true
+          example: null
 
     AlertLevel:
       type: object
@@ -180,11 +210,20 @@ components:
             - extreme
           description: |
             - **safe**: < 30°C — No alert
-            - **caution**: 30–34°C — Mild warning to stay hydrated
-            - **danger**: 35–39°C — Alert to find cooling centre (official threshold)
+            - **caution**: 30–34°C — Mild warning to stay hydrated and cool
+            - **danger**: 35–39°C — Extreme heat warning to find a cool space now
             - **extreme**: ≥ 40°C — Urgent alert to seek cooling immediately
           example: danger
         message:
           type: string
           description: Human-readable alert message for the UI
-          example: "Extreme Heat Warning — Find a Cool Space Now"
+          example: "Extreme Heat Warning - Find a Cool Space Now"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: Missing or invalid field: temperature

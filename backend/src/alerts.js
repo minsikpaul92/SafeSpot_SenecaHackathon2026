@@ -1,15 +1,15 @@
 export const getAlertLevel = (temperature) => {
   if (temperature >= 40) {
-    return { level: 'extreme', message: 'Extreme Heat Warning — Find a Cool Space Now' };
+    return { level: 'extreme', message: 'Extreme Danger - Seek cooling immediately' };
   }
 
   if (temperature >= 35) {
-    return { level: 'danger', message: 'Danger — Find a cooling centre immediately' };
+    return { level: 'danger', message: 'Extreme Heat Warning - Find a Cool Space Now' };
   }
 
   if (temperature >= 30) {
-    return { level: 'caution', message: 'Caution — Stay hydrated and monitor conditions' };
+    return { level: 'caution', message: 'Heat Caution - Stay hydrated and cool' };
   }
 
-  return { level: 'safe', message: 'Safe — No heat alert at this time' };
+  return { level: 'safe', message: 'Temperature is safe' };
 };
