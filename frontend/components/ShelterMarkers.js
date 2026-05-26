@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import UserLocation from "./UserLocation";
@@ -24,6 +24,8 @@ const LIBRARY_URL =
 export default function ShelterMarkers({ userLocation, onSheltersLoaded }) {
   const [coolingFeatures, setCoolingFeatures] = useState([]);
   const [libraryFeatures, setLibraryFeatures] = useState([]);
+  const onSheltersLoadedRef = useRef(onSheltersLoaded);
+  onSheltersLoadedRef.current = onSheltersLoaded;
 
   const center = userLocation
     ? [userLocation.lat, userLocation.lng]
@@ -57,12 +59,12 @@ export default function ShelterMarkers({ userLocation, onSheltersLoaded }) {
           .map((f) => ({
             type: "library",
             name: f.properties.BranchName || "Library Branch",
-            address: f.properties.address_full || f.properties.ADDRESS || "",
+            address: f.properties.Address || "",
             lat: f.geometry.coordinates[1],
             lng: f.geometry.coordinates[0],
           }));
 
-        onSheltersLoaded?.([...coolingList, ...libraryList]);
+        onSheltersLoadedRef.current?.([...coolingList, ...libraryList]);
       })
       .catch((err) => console.error("Failed to load shelter data:", err));
   }, []);
@@ -113,7 +115,7 @@ export default function ShelterMarkers({ userLocation, onSheltersLoaded }) {
             <Popup>
               <strong>{f.properties.BranchName || "Library Branch"}</strong>
               <br />
-              {f.properties.address_full || f.properties.ADDRESS || ""}
+              {f.properties.Address || ""}
             </Popup>
           </CircleMarker>
         ))}

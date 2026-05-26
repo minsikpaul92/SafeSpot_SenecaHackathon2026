@@ -96,9 +96,16 @@ export default function Home() {
               </div>
             </div>
 
-            {/* GPS card + map + nearest result — Arun */}
-            <NearestShelter />
+            {/* Toronto outdoor temp — OpenWeather (Paul) */}
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+              <p className="text-sm text-gray-500 mb-2">🌤️ Toronto Outdoor Temp</p>
+              <div className="text-5xl font-bold text-yellow-400">-- °C</div>
+              <p className="text-xs text-gray-600 mt-3">Live city temperature from OpenWeather API</p>
+            </div>
           </div>
+
+          {/* GPS + map + nearest shelter — Arun (full width) */}
+          <NearestShelter />
         </section>
       </main>
 
