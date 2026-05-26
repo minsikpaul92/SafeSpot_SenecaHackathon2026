@@ -74,7 +74,6 @@ SafeSpot Toronto visualizes heat risk zones across the city, monitors live tempe
 | Urban Heat Island Effect | ArcGIS REST API (Seneca) | GeoJSON |
 | Air Conditioned & Cool Spaces | City of Toronto Open Data | GeoJSON |
 | Library Branch Locations | City of Toronto Open Data | GeoJSON |
-| Flood Events (Toronto) | ArcGIS REST API | GeoJSON |
 | Live Temperature | Raspberry Pi Sensor | POST via FastAPI |
 
 ---
