@@ -2,6 +2,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import NearestShelter from "@/components/NearestShelter";
 import WeatherCard from "@/components/WeatherCard";
+import SensorCard from "@/components/SensorCard";
 
 export default function Home() {
   return (
@@ -71,14 +72,7 @@ export default function Home() {
 
           {/* Temperature cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-3xl mb-6">
-            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5 flex items-center gap-4">
-              <span className="text-3xl">🌡️</span>
-              <div>
-                <p className="text-xs text-gray-500">Sensor Temperature</p>
-                <p className="text-3xl font-bold text-orange-400">-- °C</p>
-                <p className="text-xs text-gray-600 mt-0.5">Raspberry Pi · updates every 5s</p>
-              </div>
-            </div>
+            <SensorCard />
             <WeatherCard />
           </div>
 

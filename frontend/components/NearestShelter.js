@@ -140,35 +140,40 @@ export default function NearestShelter() {
       </div>
 
       {/* ── Nearest shelter results ── */}
-      {userLocation && shelters.length > 0 && (
-        <div className="w-full max-w-3xl mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {nearestCooling && (
-            <div className="bg-zinc-900 border border-blue-800 rounded-xl p-4">
-              <p className="text-xs text-blue-400 font-semibold uppercase tracking-wide mb-2">
-                ❄️ Nearest Cooling Centre
-              </p>
-              <p className="text-white font-semibold">{nearestCooling.name}</p>
-              <p className="text-gray-500 text-xs mt-0.5">{nearestCooling.address}</p>
-              <p className="text-blue-400 text-sm font-bold mt-3">
-                {nearestCooling.distance.toFixed(2)} km away
-              </p>
-            </div>
-          )}
-
-          {nearestLibrary && (
-            <div className="bg-zinc-900 border border-green-800 rounded-xl p-4">
-              <p className="text-xs text-green-400 font-semibold uppercase tracking-wide mb-2">
-                📚 Nearest Library
-              </p>
-              <p className="text-white font-semibold">{nearestLibrary.name}</p>
-              <p className="text-gray-500 text-xs mt-0.5">{nearestLibrary.address}</p>
-              <p className="text-green-400 text-sm font-bold mt-3">
-                {nearestLibrary.distance.toFixed(2)} km away
-              </p>
-            </div>
-          )}
-        </div>
-      )}
+      <div className="w-full max-w-3xl mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {!userLocation ? (
+          <div className="md:col-span-2 bg-zinc-900 border border-zinc-700 rounded-xl p-5 text-center text-gray-500 text-sm">
+            📍 Detect your location above to find the nearest cooling centre and library
+          </div>
+        ) : (
+          <>
+            {nearestCooling && (
+              <div className="bg-zinc-900 border border-blue-700 rounded-xl p-5">
+                <p className="text-xs text-blue-400 font-semibold uppercase tracking-wide mb-2">
+                  ❄️ Nearest Cooling Centre
+                </p>
+                <p className="text-white font-bold text-base">{nearestCooling.name}</p>
+                <p className="text-gray-400 text-xs mt-1">{nearestCooling.address}</p>
+                <p className="text-blue-400 text-xl font-bold mt-3">
+                  {nearestCooling.distance.toFixed(2)} km away
+                </p>
+              </div>
+            )}
+            {nearestLibrary && (
+              <div className="bg-zinc-900 border border-green-700 rounded-xl p-5">
+                <p className="text-xs text-green-400 font-semibold uppercase tracking-wide mb-2">
+                  📚 Nearest Library
+                </p>
+                <p className="text-white font-bold text-base">{nearestLibrary.name}</p>
+                <p className="text-gray-400 text-xs mt-1">{nearestLibrary.address}</p>
+                <p className="text-green-400 text-xl font-bold mt-3">
+                  {nearestLibrary.distance.toFixed(2)} km away
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </>
   );
 }
