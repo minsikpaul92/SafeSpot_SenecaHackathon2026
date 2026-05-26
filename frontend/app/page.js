@@ -1,6 +1,7 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import NearestShelter from "@/components/NearestShelter";
+import WeatherCard from "@/components/WeatherCard";
 
 export default function Home() {
   return (
@@ -60,13 +61,11 @@ export default function Home() {
           </p>
 
           {/* Legend */}
-          <div className="flex flex-wrap justify-center gap-4 mb-8 text-xs text-gray-400">
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block"/><span>High Heat</span></span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-orange-400 inline-block"/><span>Medium Heat</span></span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-yellow-400 inline-block"/><span>Low Heat</span></span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-green-500 inline-block"/><span>Safe</span></span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-500 inline-block"/><span>Cooling Centre</span></span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-green-400 inline-block"/><span>Library</span></span>
+          <div className="flex flex-wrap justify-center gap-5 mb-8 text-xs text-gray-400">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-500 opacity-80 inline-block"/><span>High Heat</span></span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-500 opacity-40 inline-block"/><span>Low Heat</span></span>
+            <span className="flex items-center gap-1.5"><span>❄️</span><span>Cooling Centre</span></span>
+            <span className="flex items-center gap-1.5"><span>📚</span><span>Library</span></span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-500 inline-block"/><span>You</span></span>
           </div>
 
@@ -80,14 +79,7 @@ export default function Home() {
                 <p className="text-xs text-gray-600 mt-0.5">Raspberry Pi · updates every 5s</p>
               </div>
             </div>
-            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5 flex items-center gap-4">
-              <span className="text-3xl">🌤️</span>
-              <div>
-                <p className="text-xs text-gray-500">Toronto Outdoor Temp</p>
-                <p className="text-3xl font-bold text-yellow-400">-- °C</p>
-                <p className="text-xs text-gray-600 mt-0.5">OpenWeather API · updates hourly</p>
-              </div>
-            </div>
+            <WeatherCard />
           </div>
 
           {/* GPS + full map + nearest shelter */}

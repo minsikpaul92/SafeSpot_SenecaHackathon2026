@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup, GeoJSON } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, GeoJSON } from "react-leaflet";
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import UserLocation from "./UserLocation";
 
@@ -14,12 +15,27 @@ const LIBRARY_URL =
 const HEAT_URL =
   "https://services1.arcgis.com/jYHC0Oa2n7z2uKcM/arcgis/rest/services/Impervious_Surface_and_the_Urban_Heat_Island_Effect_in_Toronto_WFL1/FeatureServer/1/query?where=1%3D1&outFields=SurfTemp_Tess_MEAN&f=geojson&resultRecordCount=2000";
 
-function heatColor(temp) {
-  if (temp >= 35) return "#ef4444";
-  if (temp >= 32) return "#f97316";
-  if (temp >= 29) return "#facc15";
-  return "#22c55e";
+// Heat island — all red, opacity by temperature
+function heatStyle(feature) {
+  const temp = feature.properties.SurfTemp_Tess_MEAN ?? 20;
+  const min = 20, max = 42;
+  const opacity = Math.min(0.75, Math.max(0.05, (temp - min) / (max - min) * 0.75));
+  return { fillColor: "#ef4444", fillOpacity: opacity, weight: 0, stroke: false };
 }
+
+// Custom divIcon factory
+function makeIcon(emoji) {
+  return L.divIcon({
+    html: `<div style="font-size:18px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4))">${emoji}</div>`,
+    className: "",
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    popupAnchor: [0, -12],
+  });
+}
+
+const coolingIcon = makeIcon("❄️");
+const libraryIcon = makeIcon("📚");
 
 export default function ShelterMarkers({ userLocation, onSheltersLoaded }) {
   const [coolingFeatures, setCoolingFeatures] = useState([]);
@@ -33,7 +49,6 @@ export default function ShelterMarkers({ userLocation, onSheltersLoaded }) {
     : [43.7, -79.42];
 
   useEffect(() => {
-    // Load shelter data
     Promise.all([
       fetch(COOLING_URL).then((r) => r.json()),
       fetch(LIBRARY_URL).then((r) => r.json()),
@@ -67,10 +82,9 @@ export default function ShelterMarkers({ userLocation, onSheltersLoaded }) {
       onSheltersLoadedRef.current?.([...coolingList, ...libraryList]);
     }).catch((err) => console.error("Failed to load shelter data:", err));
 
-    // Load heat island data
     fetch(HEAT_URL)
       .then((r) => r.json())
-      .then((data) => setHeatData(data))
+      .then(setHeatData)
       .catch((err) => console.error("Failed to load heat data:", err));
   }, []);
 
@@ -89,56 +103,46 @@ export default function ShelterMarkers({ userLocation, onSheltersLoaded }) {
         zoomOffset={-1}
       />
 
-      {/* Heat Island Effect layer */}
+      {/* Heat Island layer — red, opacity by temperature */}
       {heatData && (
-        <GeoJSON
-          data={heatData}
-          style={(feature) => ({
-            fillColor: heatColor(feature.properties.SurfTemp_Tess_MEAN),
-            fillOpacity: 0.45,
-            weight: 0,
-            stroke: false,
-          })}
-        />
+        <GeoJSON key="heat" data={heatData} style={heatStyle} />
       )}
 
-      {/* User position marker */}
+      {/* User position */}
       <UserLocation position={userLocation} />
 
-      {/* Cooling centre markers — blue */}
+      {/* Cooling centres — ❄️ */}
       {coolingFeatures
         .filter((f) => f.geometry?.coordinates?.length >= 2)
         .map((f, i) => (
-          <CircleMarker
+          <Marker
             key={`cc-${i}`}
-            center={[f.geometry.coordinates[1], f.geometry.coordinates[0]]}
-            radius={5}
-            pathOptions={{ color: "#3b82f6", fillColor: "#3b82f6", fillOpacity: 0.8, weight: 1 }}
+            position={[f.geometry.coordinates[1], f.geometry.coordinates[0]]}
+            icon={coolingIcon}
           >
             <Popup>
               <strong>{f.properties.NAME || "Cooling Centre"}</strong>
               <br />
               {f.properties.ADDRESS || ""}
             </Popup>
-          </CircleMarker>
+          </Marker>
         ))}
 
-      {/* Library markers — green */}
+      {/* Libraries — 📚 */}
       {libraryFeatures
         .filter((f) => f.geometry?.coordinates?.length >= 2)
         .map((f, i) => (
-          <CircleMarker
+          <Marker
             key={`lib-${i}`}
-            center={[f.geometry.coordinates[1], f.geometry.coordinates[0]]}
-            radius={5}
-            pathOptions={{ color: "#22c55e", fillColor: "#22c55e", fillOpacity: 0.8, weight: 1 }}
+            position={[f.geometry.coordinates[1], f.geometry.coordinates[0]]}
+            icon={libraryIcon}
           >
             <Popup>
               <strong>{f.properties.BranchName || "Library Branch"}</strong>
               <br />
               {f.properties.Address || ""}
             </Popup>
-          </CircleMarker>
+          </Marker>
         ))}
     </MapContainer>
   );
