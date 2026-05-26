@@ -1,0 +1,21 @@
+{
+  "name": "safespot-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "better-sqlite3": "^11.10.0",
+    "drizzle-orm": "^0.44.7",
+    "hono": "^4.6.10"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.7"
+  }
+}
