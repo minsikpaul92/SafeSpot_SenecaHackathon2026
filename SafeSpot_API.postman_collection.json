@@ -8,7 +8,11 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "http://localhost:8000"
+      "value": "localhost:8000"
+    },
+    {
+      "key": "protocol",
+      "value": "http"
     }
   ],
   "item": [
@@ -21,7 +25,8 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/",
+              "raw": "{{protocol}}://{{base_url}}/",
+              "protocol": "{{protocol}}",
               "host": ["{{base_url}}"],
               "path": [""]
             }
@@ -42,7 +47,8 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/health",
+              "raw": "{{protocol}}://{{base_url}}/health",
+              "protocol": "{{protocol}}",
               "host": ["{{base_url}}"],
               "path": ["health"]
             }
@@ -68,7 +74,8 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/openapi.json",
+              "raw": "{{protocol}}://{{base_url}}/openapi.json",
+              "protocol": "{{protocol}}",
               "host": ["{{base_url}}"],
               "path": ["openapi.json"]
             }
@@ -84,16 +91,17 @@
           ]
         },
         {
-          "name": "Scalar Docs (HTML)",
+          "name": "Swagger UI Docs",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/docs",
+              "raw": "{{protocol}}://{{base_url}}/docs",
+              "protocol": "{{protocol}}",
               "host": ["{{base_url}}"],
               "path": ["docs"]
             },
-            "description": "Opens the Scalar interactive API documentation UI. Best viewed in a browser."
+            "description": "Opens the Swagger UI interactive API documentation. Best viewed in a browser."
           }
         }
       ]
@@ -108,7 +116,8 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/sensor-latest",
+              "raw": "{{protocol}}://{{base_url}}/api/sensor-latest",
+              "protocol": "{{protocol}}",
               "host": ["{{base_url}}"],
               "path": ["api", "sensor-latest"]
             }
@@ -142,7 +151,8 @@
               "raw": "{\n  \"temperature\": 37.5\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/sensor-data",
+              "raw": "{{protocol}}://{{base_url}}/api/sensor-data",
+              "protocol": "{{protocol}}",
               "host": ["{{base_url}}"],
               "path": ["api", "sensor-data"]
             },
@@ -177,7 +187,8 @@
               "raw": "{\n  \"temperature\": 31.0\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/sensor-override",
+              "raw": "{{protocol}}://{{base_url}}/api/sensor-override",
+              "protocol": "{{protocol}}",
               "host": ["{{base_url}}"],
               "path": ["api", "sensor-override"]
             },

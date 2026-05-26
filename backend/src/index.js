@@ -8,7 +8,10 @@ const port =
   Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_PORT
 
 initializeDatabase()
-seedMockData()
+
+if (process.env.NODE_ENV !== 'production') {
+  seedMockData()
+}
 
 const app = createApp()
 
