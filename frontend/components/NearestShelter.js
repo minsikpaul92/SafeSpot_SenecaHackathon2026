@@ -3,6 +3,20 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+function simulateTemp(temp) {
+  // Fire a custom event — SensorCard listens and updates immediately (no backend needed)
+  window.dispatchEvent(new CustomEvent("safespot-temp-override", { detail: { temperature: temp } }));
+
+  // Also hit the backend override endpoint if it's running
+  fetch(`${BACKEND_URL}/api/sensor-override`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ temperature: temp }),
+  }).catch(() => {});
+}
+
 /**
  * Bearing from point 1 → point 2, in degrees (0 = North, clockwise).
  */
@@ -215,8 +229,36 @@ export default function NearestShelter() {
       </div>
 
       {/* ── Live map ── */}
-      <div className="w-full max-w-3xl h-80 rounded-2xl overflow-hidden border border-zinc-700">
+      <div className="relative w-full max-w-3xl h-80 rounded-2xl overflow-hidden border border-zinc-700">
         <Map userLocation={userLocation} onSheltersLoaded={setShelters} />
+
+        {/* 🧪 Test buttons — top right overlay */}
+        <div className="absolute top-2 right-2 z-[1000] flex flex-col gap-1">
+          <button
+            onClick={() => simulateTemp(30)}
+            className="text-xs px-2 py-1 rounded bg-yellow-500/80 hover:bg-yellow-400 text-black font-semibold backdrop-blur-sm"
+          >
+            ⚠️ 30°C
+          </button>
+          <button
+            onClick={() => simulateTemp(36)}
+            className="text-xs px-2 py-1 rounded bg-orange-600/80 hover:bg-orange-500 text-white font-semibold backdrop-blur-sm"
+          >
+            🚨 36°C
+          </button>
+          <button
+            onClick={() => simulateTemp(41)}
+            className="text-xs px-2 py-1 rounded bg-red-700/80 hover:bg-red-600 text-white font-semibold backdrop-blur-sm"
+          >
+            🔴 41°C
+          </button>
+          <button
+            onClick={() => simulateTemp(20)}
+            className="text-xs px-2 py-1 rounded bg-zinc-700/80 hover:bg-zinc-600 text-gray-300 font-semibold backdrop-blur-sm"
+          >
+            ✅ Reset
+          </button>
+        </div>
       </div>
 
       {/* ── Nearest cooling + library detail cards ── */}

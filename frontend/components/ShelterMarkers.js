@@ -18,9 +18,21 @@ const HEAT_URL =
 // Heat island — all red, opacity by temperature
 function heatStyle(feature) {
   const temp = feature.properties.SurfTemp_Tess_MEAN ?? 20;
-  const min = 20, max = 42;
-  const opacity = Math.min(0.75, Math.max(0.05, (temp - min) / (max - min) * 0.75));
-  return { fillColor: "#ef4444", fillOpacity: opacity, weight: 0, stroke: false };
+
+  // 3-tier color + opacity for clear contrast
+  let fillColor, fillOpacity;
+  if (temp >= 32) {
+    fillColor = "#8B0000";   // dark red — high heat (≥32°C)
+    fillOpacity = 0.80;
+  } else if (temp >= 28) {
+    fillColor = "#FF0000";   // red — medium heat (28–32°C)
+    fillOpacity = 0.55;
+  } else {
+    fillColor = "#f97316";   // orange — low heat (<28°C)
+    fillOpacity = 0.35;
+  }
+
+  return { fillColor, fillOpacity, weight: 0, stroke: false };
 }
 
 // Custom divIcon factory
