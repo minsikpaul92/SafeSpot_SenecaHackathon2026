@@ -14,6 +14,13 @@ const toReadingPayload = (reading) => {
 }
 
 export const createSensorStore = (database) => {
+  if (!database) {
+    throw new Error(
+      'createSensorStore requires a database instance. ' +
+        'Pass a Drizzle db via createSensorStore(db).'
+    )
+  }
+
   const save = (temperature, source) => {
     const createdAt = new Date().toISOString()
 

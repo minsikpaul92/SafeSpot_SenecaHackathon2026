@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createApp } from '../src/app.js'
 import { createMockStore } from './helpers/mock-sensor-store.js'
+import { createTestDatabase } from './helpers/test-database.js'
 
 describe('createApp', () => {
   it('creates an app without errors', () => {
@@ -9,9 +10,11 @@ describe('createApp', () => {
     expect(typeof app.request).toBe('function')
   })
 
-  it('creates an app with default sensorStore', () => {
-    const app = createApp({ sensorStore: createMockStore() })
+  it('creates an app with a real db-backed sensorStore', () => {
+    const db = createTestDatabase()
+    const app = createApp({ db })
     expect(app).toBeDefined()
+    expect(typeof app.request).toBe('function')
   })
 
   describe('GET /', () => {
