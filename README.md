@@ -40,13 +40,14 @@ Unlike weather apps that report a city-wide average, SafeSpot measures the **act
 
 ## ⚙️ Tech Stack
 
-| Layer        | Technology                                 |
-| ------------ | ------------------------------------------ |
-| Frontend     | Next.js, Tailwind CSS, Leaflet.js          |
-| Backend      | Hono.js (Node.js) + Drizzle ORM + SQLite   |
-| Hardware     | Raspberry Pi + Temperature Sensor          |
-| Map Library  | Leaflet.js with GeoJSON layers             |
-| Data Sources | ArcGIS REST API, City of Toronto Open Data |
+| Layer        | Technology                                       |
+| ------------ | ------------------------------------------------ |
+| Frontend     | Next.js, Tailwind CSS, Leaflet.js                |
+| Backend      | Hono.js (Node.js) + Drizzle ORM + SQLite         |
+| Deployment   | Render (backend) · Docker                        |
+| Hardware     | Raspberry Pi + Temperature Sensor                |
+| Map Library  | Leaflet.js with GeoJSON layers                   |
+| Data Sources | ArcGIS REST API, City of Toronto Open Data       |
 
 ---
 
@@ -72,14 +73,14 @@ Unlike weather apps that report a city-wide average, SafeSpot measures the **act
 - User's GPS location is checked against the heat island GeoJSON polygons using **ray-casting point-in-polygon** (no external dependencies)
 - `getCombinedRisk(zoneLevel, sensorTemp)` calculates actual risk:
 
-  | Zone | Sensor Temp | Risk Level |
-  | ---- | ----------- | ---------- |
-  | Any  | < 30°C      | Silent (no warning) |
-  | HIGH | 30–35°C     | ⚠️ Caution |
-  | HIGH | 35–40°C     | 🚨 Danger  |
-  | HIGH | ≥ 40°C      | 🔴 Extreme |
-  | MEDIUM | 35–40°C   | ⚠️ Caution |
-  | MEDIUM | ≥ 40°C    | 🚨 Danger  |
+  | Zone   | Sensor Temp | Risk Level         |
+  | ------ | ----------- | ------------------ |
+  | Any    | < 30°C      | Silent (no warning)|
+  | HIGH   | 30–35°C     | ⚠️ Caution         |
+  | HIGH   | 35–40°C     | 🚨 Danger          |
+  | HIGH   | ≥ 40°C      | 🔴 Extreme         |
+  | MEDIUM | 35–40°C     | ⚠️ Caution         |
+  | MEDIUM | ≥ 40°C      | 🚨 Danger          |
 
 - Risk card only appears at **caution or above** — no false warnings on safe-temperature days
 
@@ -101,15 +102,15 @@ Unlike weather apps that report a city-wide average, SafeSpot measures the **act
 
 ## 🔌 API Endpoints
 
-| Method | Endpoint               | Description                                    |
-| ------ | ---------------------- | ---------------------------------------------- |
-| `GET`  | `/`                    | Health check                                   |
-| `GET`  | `/health`              | Health check                                   |
-| `POST` | `/api/sensor-data`     | Receives temperature from Raspberry Pi         |
+| Method | Endpoint               | Description                                         |
+| ------ | ---------------------- | --------------------------------------------------- |
+| `GET`  | `/`                    | Health check                                        |
+| `GET`  | `/health`              | Health check                                        |
+| `POST` | `/api/sensor-data`     | Receives temperature from Raspberry Pi              |
 | `GET`  | `/api/sensor-latest`   | Returns most recent sensor reading with alert level |
-| `POST` | `/api/sensor-override` | Manual temperature input for testing           |
-| `GET`  | `/docs`                | Swagger UI (OpenAPI 3.1)                       |
-| `GET`  | `/openapi.json`        | OpenAPI spec                                   |
+| `POST` | `/api/sensor-override` | Manual temperature input for testing                |
+| `GET`  | `/docs`                | Swagger UI (OpenAPI 3.1)                            |
+| `GET`  | `/openapi.json`        | OpenAPI spec                                        |
 
 ---
 
@@ -119,7 +120,7 @@ Unlike weather apps that report a city-wide average, SafeSpot measures the **act
 Raspberry Pi (Temperature Sensor — deployed in heat island zone)
         │
         ▼  POST /api/sensor-data  {"temperature": 36.2}
-Hono Backend (Node.js + Drizzle + SQLite)
+Hono Backend (Node.js + Drizzle + SQLite) — deployed on Render
         │  stores reading with timestamp + source
         ▼  GET /api/sensor-latest (every 5s)
 Next.js Frontend
@@ -166,6 +167,7 @@ SafeSpot/
 │   │   └── Footer.js
 │   └── .env.local          # API keys + NEXT_PUBLIC_BACKEND_URL
 └── backend/                # Hono server
+    ├── Dockerfile           # Multi-stage Docker build (Node 22 slim)
     ├── src/
     │   ├── index.js        # Server entry point (port from env)
     │   ├── app.js          # Hono app factory + CORS + Swagger
@@ -180,9 +182,9 @@ SafeSpot/
 
 ---
 
-## 🚀 Local Setup
+## 🚀 Setup
 
-### Backend
+### Backend (Local)
 
 ```bash
 cd backend
@@ -191,6 +193,23 @@ npm run dev
 # → http://localhost:8000
 # → Swagger docs: http://localhost:8000/docs
 ```
+
+### Backend (Docker)
+
+```bash
+cd backend
+docker build -t safespot-backend .
+docker run -p 8000:8000 safespot-backend
+```
+
+### Backend (Deployed)
+
+The backend is live on Render:
+```
+https://safespot-backend-bbn6.onrender.com
+```
+
+> **Note:** Render's free tier spins down after 15 minutes of inactivity. The first request after idle may take 30–60 seconds to respond.
 
 ### Frontend
 
@@ -204,21 +223,22 @@ npm run dev
 ### `.env.local` (frontend)
 
 ```env
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+NEXT_PUBLIC_BACKEND_URL=https://safespot-backend-bbn6.onrender.com
 NEXT_PUBLIC_OPENWEATHER_KEY=your_key
 NEXT_PUBLIC_MAPBOX_TOKEN=your_token
 ```
 
-### Raspberry Pi Script (Gary)
+### Raspberry Pi Script
 
 ```python
-import requests, time
+import requests
+import time
 
-BACKEND = "http://<backend-ip>:8000/api/sensor-data"
+BACKEND_URL = "https://safespot-backend-bbn6.onrender.com"
 
 while True:
     temp = read_sensor()  # DHT22 / DS18B20
-    requests.post(BACKEND, json={"temperature": temp})
+    requests.post(f"{BACKEND_URL}/api/sensor-data", json={"temperature": temp})
     time.sleep(5)
 ```
 
@@ -229,7 +249,7 @@ while True:
 1. Web app opens — Toronto map loads with **heat island risk areas**
 2. Browser GPS detects user location — marked on map
 3. App checks if user is inside a heat island polygon (**point-in-polygon**)
-4. Raspberry Pi sensor is raised above **35°C** to simulate a heatwave
+4. Temperature is raised above **35°C** (via Raspberry Pi sensor or simulation)
 5. App cross-checks: heat island zone + dangerous temperature → **🚨 Danger alert fires**
 6. Full-screen banner + siren sound + push notification
 7. App displays: **"Nearest Cooling Centre: [Name], 0.3 km away → Get Directions"**
@@ -241,10 +261,10 @@ while True:
 | PS2 Requirement                 | Our Solution                                                              |
 | ------------------------------- | ------------------------------------------------------------------------- |
 | Visualize climate risk areas    | Urban heat island layer (High / Medium / Low Heat Areas)                  |
-| Identify vulnerable communities | Heat zone colour coding by risk area                                       |
-| Show proximity to safe shelter  | Cooling centres & libraries with GPS routing + Google Maps directions      |
-| Help communities prepare        | Real-time alerts + nearest safe space guidance                             |
-| Innovative data approach        | Raspberry Pi sensor cross-checked with heat island map for actual risk     |
+| Identify vulnerable communities | Heat zone colour coding by risk area                                      |
+| Show proximity to safe shelter  | Cooling centres & libraries with GPS routing + Google Maps directions     |
+| Help communities prepare        | Real-time alerts + nearest safe space guidance                            |
+| Innovative data approach        | Raspberry Pi sensor cross-checked with heat island map for actual risk    |
 
 ---
 
