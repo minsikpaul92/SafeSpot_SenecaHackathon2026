@@ -8,7 +8,8 @@ A real-time web app that helps Toronto communities stay safe during extreme heat
 
 https://safespot-frontend-qahl.onrender.com/
 
-<img width="800" height="496" alt="ScreenRecording2026-05-26at10 54 55PM-ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/50370129-eef1-4e20-970f-e49372bc5e9f" />
+<img width="800" height="496" alt="ScreenRecording2026-05-26at10 54 55PM-ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/61e139aa-5ca2-4739-b6bf-bbd86bcee525" />
+
 ---
 
 ## 🧩 The Problem
