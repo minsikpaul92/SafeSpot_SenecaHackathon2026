@@ -9,6 +9,9 @@ const geistSans = Geist({
 export const metadata = {
   title: "SafeSpot Toronto",
   description: "Real-time heat risk mapping and cooling centre routing for Toronto",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }) {

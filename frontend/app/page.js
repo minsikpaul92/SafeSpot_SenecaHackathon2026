@@ -188,6 +188,7 @@ export default function Home() {
   const [currentZone, setCurrentZone] = useState(null);
   const [nearestBearing, setNearestBearing] = useState(null);
   const [selectedShelterType, setSelectedShelterType] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const getBannerAlert = () => {
     if (activeTemp === null) return null;
@@ -499,7 +500,7 @@ export default function Home() {
         let isStuck = false;
         let stuckAt = 0;
         let accumulated = 0;
-        const STICK_THRESHOLD = 280; // wheel delta px before releasing
+        const STICK_THRESHOLD = 187; // wheel delta px before releasing
 
         // Wheel intercept for stick effect
         window.addEventListener('wheel', (e) => {
@@ -552,6 +553,21 @@ export default function Home() {
           if (!allVisible) isStuck = false;
           wasAllVisible = allVisible;
         }, { passive: true });
+      }
+
+      // News citation reveal
+      const citeItems = document.querySelectorAll('.cite-item');
+      if (citeItems.length > 0) {
+        const citeObserver = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              entry.target.classList.remove('opacity-0', 'translate-y-4');
+              entry.target.classList.add('opacity-100', 'translate-y-0');
+              citeObserver.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.2 });
+        citeItems.forEach(item => citeObserver.observe(item));
       }
 
       // -------------------------------------------------------------
@@ -641,18 +657,26 @@ export default function Home() {
           localStorage.setItem('safespot_coords', JSON.stringify(coords));
           window.dispatchEvent(new CustomEvent("safespot-gps-updated", { detail: coords }));
           
-          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`)
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=14&addressdetails=1`)
             .then(res => res.json())
             .then(data => {
-              const address = data.address || {};
-              const city = address.city || address.town || address.village || address.suburb || '';
-              const state = address.state || '';
-              const label = city && state ? `${city}, ${state}` : `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+              const addr = data.address || {};
+              const neighbourhood = addr.suburb || addr.neighbourhood || addr.quarter || addr.city_district || '';
+              const city = addr.city || addr.town || addr.village || '';
+              const postal = addr.postcode || '';
+              let label;
+              if (neighbourhood && city) {
+                label = postal ? `${neighbourhood}, ${city} ${postal}` : `${neighbourhood}, ${city}`;
+              } else if (city) {
+                label = postal ? `${city} ${postal}` : city;
+              } else {
+                label = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+              }
               setLocationText(label);
               localStorage.setItem('safespot_location', label);
             })
             .catch(() => {
-              const label = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+              const label = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
               setLocationText(label);
               localStorage.setItem('safespot_location', label);
             });
@@ -682,30 +706,29 @@ export default function Home() {
       <header className="w-full sticky top-0 z-50 bg-[#000000]/80 backdrop-blur-md border-b border-white/[0.05]">
         <div className="w-full flex items-center justify-between px-6 py-4 max-w-[1200px] mx-auto">
           <a href="#" className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer">
-            {/*   SafeSpot Logo mockup   */}
             <div className="flex gap-1 items-center justify-center">
               <div className="w-5 h-5 rounded-full border-[3px] border-white relative before:absolute before:inset-0 before:m-auto before:w-2 before:h-2 before:bg-white before:rounded-full mix-blend-screen opacity-90 -ml-1"></div>
             </div>
             <span className="font-semibold text-[17px] tracking-tight">SafeSpot</span>
           </a>
-        
-        <div className="flex items-center gap-3">
-          <nav className="hidden md:flex items-center gap-7 text-[13px] text-neutral-400 font-medium">
-            <a href="#story" className="hover:text-white transition-colors">Why SafeSpot</a>
-            <a href="#how-it-works-simple" className="hover:text-white transition-colors">How It Works</a>
-            <a href="#dashboard" className="hover:text-white transition-colors">Live Map</a>
-            <a href="#open-source" className="hover:text-white transition-colors">Open Source</a>
-            <a href="#team" className="hover:text-white transition-colors">Team</a>
 
-          </nav>
+          <div className="flex items-center gap-3">
+            {/* Desktop nav links */}
+            <nav className="hidden md:flex items-center gap-7 text-[13px] text-neutral-400 font-medium">
+              <a href="#story" className="hover:text-white transition-colors">Why SafeSpot</a>
+              <a href="#how-it-works-simple" className="hover:text-white transition-colors">How It Works</a>
+              <a href="#dashboard" className="hover:text-white transition-colors">Live Map</a>
+              <a href="#open-source" className="hover:text-white transition-colors">Open Source</a>
+              <a href="#team-sponsors" className="hover:text-white transition-colors">Team</a>
+            </nav>
 
-          <div className="Header_navDivider__Jexuv hide-tablet w-[1px] h-4 bg-white/20 mx-1"></div>
-  
-          <div className="hidden md:flex items-center gap-3 text-[13px] font-medium">
+            <div className="hidden md:block w-[1px] h-4 bg-white/20 mx-1"></div>
+
+            {/* Temperature pill — always visible */}
             {(() => {
               const styles = getPillStyles(activeTemp);
               return (
-                <a href="#dashboard" className={`${styles.bg} px-3.5 py-1.5 rounded-full hover:opacity-90 transition-all active:scale-95 flex items-center gap-2`}>
+                <a href="#dashboard" className={`${styles.bg} px-3.5 py-1.5 rounded-full hover:opacity-90 transition-all active:scale-95 flex items-center gap-2 text-[13px] font-medium`}>
                   <span className="relative flex h-2 w-2">
                     <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${styles.ping} opacity-75`}></span>
                     <span className={`relative inline-flex rounded-full h-2 w-2 ${styles.dot}`}></span>
@@ -715,13 +738,42 @@ export default function Home() {
                 </a>
               );
             })()}
-            <button id="location-pill" onClick={() => requestUserLocation(true)} className="flex items-center gap-1.5 text-neutral-400 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
+
+            {/* Detect location — desktop only */}
+            <button id="location-pill" onClick={() => requestUserLocation(true)} className="hidden md:flex items-center gap-1.5 text-neutral-400 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer text-[13px]">
               <i data-lucide="map-pin" className="w-3 h-3 text-green-400"></i>
               <span id="location-text" className="text-neutral-300 text-[12px]">{locationText}</span>
             </button>
+
+            {/* Hamburger — mobile only */}
+            <button
+              className="md:hidden p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
+              onClick={() => setMobileMenuOpen(o => !o)}
+              aria-label="Menu"
+            >
+              {mobileMenuOpen ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              )}
+            </button>
           </div>
         </div>
-      </div>
+
+        {/* Mobile dropdown menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-white/[0.05] bg-[#000000]/95 backdrop-blur-md px-6 py-4 flex flex-col gap-4">
+            <nav className="flex flex-col gap-3 text-[15px] text-neutral-400 font-medium">
+              {[['#story','Why SafeSpot'],['#how-it-works-simple','How It Works'],['#dashboard','Live Map'],['#open-source','Open Source'],['#team-sponsors','Team']].map(([href, label]) => (
+                <a key={href} href={href} onClick={() => setMobileMenuOpen(false)} className="hover:text-white transition-colors py-1">{label}</a>
+              ))}
+            </nav>
+            <button onClick={() => { requestUserLocation(true); setMobileMenuOpen(false); }} className="flex items-center gap-2 text-[13px] text-neutral-400 bg-white/5 border border-white/10 px-3 py-2 rounded-xl hover:bg-white/10 transition-colors">
+              <i data-lucide="map-pin" className="w-3.5 h-3.5 text-green-400"></i>
+              <span className="text-neutral-300">{locationText}</span>
+            </button>
+          </div>
+        )}
       </header>
 
       {/*   Hero Section   */}
@@ -748,17 +800,17 @@ export default function Home() {
           </div>
           
           <div className="flex flex-col gap-3 shrink-0 md:mb-1">
-            <a href="https://www.cbc.ca/news/canada/british-columbia/bc-heat-dome-sudden-deaths-570-1.6122316" target="_blank" className="flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 transition-colors group">
+            <a href="https://www.cbc.ca/news/canada/british-columbia/bc-heat-dome-sudden-deaths-570-1.6122316" target="_blank" className="cite-item opacity-0 translate-y-4 transition-all duration-500 flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 group">
               <span className="text-xs font-semibold bg-red-500/20 text-red-400 px-2.5 py-1 rounded-full w-[60px] text-center">CBC</span>
               <span className="text-neutral-300">B.C. Sudden Deaths (2021)</span>
               <i data-lucide="arrow-up-right" className="w-4 h-4 text-neutral-500 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform"></i>
             </a>
-            <a href="https://climateinstitute.ca/reports/extreme-heat-in-canada/" target="_blank" className="flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 transition-colors group">
+            <a href="https://climateinstitute.ca/reports/extreme-heat-in-canada/" target="_blank" className="cite-item opacity-0 translate-y-4 transition-all duration-500 [transition-delay:150ms] flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 group">
               <span className="text-xs font-semibold bg-cyan-500/20 text-cyan-400 px-2.5 py-1 rounded-full w-[60px] text-center">Report</span>
               <span className="text-neutral-300">Extreme Heat in Canada (2023)</span>
               <i data-lucide="arrow-up-right" className="w-4 h-4 text-neutral-500 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform"></i>
             </a>
-            <a href="https://www.cbc.ca/news/canada/montreal/heat-wave-death-toll-1.4740031" target="_blank" className="flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 transition-colors group">
+            <a href="https://www.cbc.ca/news/canada/montreal/heat-wave-death-toll-1.4740031" target="_blank" className="cite-item opacity-0 translate-y-4 transition-all duration-500 [transition-delay:300ms] flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 group">
               <span className="text-xs font-semibold bg-red-500/20 text-red-400 px-2.5 py-1 rounded-full w-[60px] text-center">CBC</span>
               <span className="text-neutral-300">Montreal Heat Wave (2018)</span>
               <i data-lucide="arrow-up-right" className="w-4 h-4 text-neutral-500 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform"></i>
@@ -962,7 +1014,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="dashboard" className="w-full max-w-[1200px] mx-auto py-32 px-6 md:px-12 border-b border-white/[0.05] scroll-mt-24">
+      <section id="dashboard" className="w-full max-w-[1200px] mx-auto py-16 px-6 md:px-12 border-b border-white/[0.05] scroll-mt-16">
         <div className="mb-16">
           <p className="text-sm uppercase tracking-widest text-orange-400 mb-4 font-semibold">Live Map</p>
           <h2 className="text-3xl md:text-[40px] font-medium tracking-tight text-white mb-4">Interactive Heat Dashboard</h2>
@@ -1033,24 +1085,24 @@ export default function Home() {
                  <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
                   {/*  Your Location Bar  */}
                   <div className="bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
-                    <div className="flex flex-col">
+                    <div className="flex flex-col min-w-0">
                       <span className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider">📍 Your Location</span>
-                      <span className="text-[13px] font-mono text-cyan-400 font-semibold mt-0.5">
-                        {userPos ? `${userPos.lat.toFixed(5)}, ${userPos.lng.toFixed(5)}` : '--, --'}
+                      <span className="text-[12px] text-cyan-400 font-semibold mt-0.5 truncate">
+                        {userPos ? locationText : '--, --'}
                       </span>
                     </div>
-                    <button 
-                      onClick={() => requestUserLocation(true)} 
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-colors" 
+                    <button
+                      onClick={() => requestUserLocation(true)}
+                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-colors shrink-0"
                       title="Update Location"
                     >
                       ↺
                     </button>
                   </div>
 
-                  {/*  Nearest Cooling Centre Card  */}
+                  {/*  Nearest Cooling Centre Card — desktop sidebar only; mobile shows below map  */}
                   <div
-                    className={`border rounded-xl p-3 flex flex-col gap-1 cursor-pointer transition-all ${selectedShelterType === 'cooling' ? 'bg-[#141824]/80 border-blue-400/60 ring-1 ring-blue-400/30' : 'bg-[#141824]/40 border-blue-500/20 hover:border-blue-400/40'}`}
+                    className={`hidden md:flex flex-col gap-1 border rounded-xl p-3 cursor-pointer transition-all ${selectedShelterType === 'cooling' ? 'bg-[#141824]/80 border-blue-400/60 ring-1 ring-blue-400/30' : 'bg-[#141824]/40 border-blue-500/20 hover:border-blue-400/40'}`}
                     onClick={() => userPos && nearestCooling && setSelectedShelterType('cooling')}
                   >
                     <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center justify-between gap-1">
@@ -1084,9 +1136,9 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/*  Nearest Library Card  */}
+                  {/*  Nearest Library Card — desktop sidebar only  */}
                   <div
-                    className={`border rounded-xl p-3 flex flex-col gap-1 cursor-pointer transition-all ${selectedShelterType === 'library' ? 'bg-[#121c17]/80 border-green-400/60 ring-1 ring-green-400/30' : 'bg-[#121c17]/40 border-green-500/20 hover:border-green-400/40'}`}
+                    className={`hidden md:flex flex-col gap-1 border rounded-xl p-3 cursor-pointer transition-all ${selectedShelterType === 'library' ? 'bg-[#121c17]/80 border-green-400/60 ring-1 ring-green-400/30' : 'bg-[#121c17]/40 border-green-500/20 hover:border-green-400/40'}`}
                     onClick={() => userPos && nearestLibrary && setSelectedShelterType('library')}
                   >
                     <div className="text-[10px] font-bold text-green-400 uppercase tracking-wider flex items-center justify-between gap-1">
@@ -1207,6 +1259,64 @@ export default function Home() {
                 </div>
               </div>
            </div>
+
+           {/* Mobile-only shelter cards: below map */}
+           <div className="md:hidden border-t border-white/5 bg-[#111111]/90 p-4 flex flex-col gap-3">
+             {/* Cooling */}
+             <div
+               className={`border rounded-xl p-3 flex flex-col gap-1 cursor-pointer transition-all ${selectedShelterType === 'cooling' ? 'bg-[#141824]/80 border-blue-400/60 ring-1 ring-blue-400/30' : 'bg-[#141824]/40 border-blue-500/20'}`}
+               onClick={() => userPos && nearestCooling && setSelectedShelterType('cooling')}
+             >
+               <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center justify-between gap-1">
+                 <span>❄️ Nearest Cooling Centre</span>
+                 {selectedShelterType === 'cooling' && <span className="text-[9px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded-full">Selected</span>}
+               </div>
+               {userPos && nearestCooling ? (
+                 <>
+                   <div className="text-[13px] font-semibold text-white truncate mt-1">{nearestCooling.name}</div>
+                   <div className="flex items-center justify-between mt-1 text-[11px]">
+                     <div className="flex items-center gap-2">
+                       <span className="font-semibold text-blue-400">{nearestCooling.distance.toFixed(2)} km</span>
+                       {selectedShelterType === 'cooling' && (
+                         <span className="flex items-center gap-0.5 text-cyan-400">
+                           <span style={{ transform: `rotate(${getBearing(userPos.lat, userPos.lng, nearestCooling.lat, nearestCooling.lng)}deg)`, display: 'inline-block' }}>↑</span>
+                           {bearingToCompass(getBearing(userPos.lat, userPos.lng, nearestCooling.lat, nearestCooling.lng))}
+                         </span>
+                       )}
+                     </div>
+                     <button onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestCooling.lat},${nearestCooling.lng}`, "_blank"); }} className="text-blue-400 font-medium">🗺️ Directions</button>
+                   </div>
+                 </>
+               ) : <div className="text-[11px] text-neutral-500 mt-0.5">Detect location to calculate</div>}
+             </div>
+             {/* Library */}
+             <div
+               className={`border rounded-xl p-3 flex flex-col gap-1 cursor-pointer transition-all ${selectedShelterType === 'library' ? 'bg-[#121c17]/80 border-green-400/60 ring-1 ring-green-400/30' : 'bg-[#121c17]/40 border-green-500/20'}`}
+               onClick={() => userPos && nearestLibrary && setSelectedShelterType('library')}
+             >
+               <div className="text-[10px] font-bold text-green-400 uppercase tracking-wider flex items-center justify-between gap-1">
+                 <span>📚 Nearest Library</span>
+                 {selectedShelterType === 'library' && <span className="text-[9px] bg-green-500/20 text-green-300 px-1.5 py-0.5 rounded-full">Selected</span>}
+               </div>
+               {userPos && nearestLibrary ? (
+                 <>
+                   <div className="text-[13px] font-semibold text-white truncate mt-1">{nearestLibrary.name}</div>
+                   <div className="flex items-center justify-between mt-1 text-[11px]">
+                     <div className="flex items-center gap-2">
+                       <span className="font-semibold text-green-400">{nearestLibrary.distance.toFixed(2)} km</span>
+                       {selectedShelterType === 'library' && (
+                         <span className="flex items-center gap-0.5 text-cyan-400">
+                           <span style={{ transform: `rotate(${getBearing(userPos.lat, userPos.lng, nearestLibrary.lat, nearestLibrary.lng)}deg)`, display: 'inline-block' }}>↑</span>
+                           {bearingToCompass(getBearing(userPos.lat, userPos.lng, nearestLibrary.lat, nearestLibrary.lng))}
+                         </span>
+                       )}
+                     </div>
+                     <button onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestLibrary.lat},${nearestLibrary.lng}`, "_blank"); }} className="text-green-400 font-medium">🗺️ Directions</button>
+                   </div>
+                 </>
+               ) : <div className="text-[11px] text-neutral-500 mt-0.5">Detect location to calculate</div>}
+             </div>
+           </div>
         </div>
       </section>
 
@@ -1260,7 +1370,8 @@ export default function Home() {
       </section>
 
       {/*  The Team Section  */}
-      <section id="team" className="w-full max-w-[1200px] mx-auto py-32 px-6 md:px-12 border-b border-white/[0.05] scroll-mt-24">
+      <div id="team-sponsors"></div>
+      <section id="team" className="w-full max-w-[1200px] mx-auto py-20 px-6 md:px-12 border-b border-white/[0.05] scroll-mt-16">
         <div className="text-center mb-20">
           <p className="text-sm uppercase tracking-widest text-purple-400 mb-4">Behind SafeSpot</p>
           <h2 className="text-3xl md:text-[40px] font-medium tracking-tight text-white mb-4">Meet the codeXperts</h2>
