@@ -189,6 +189,7 @@ export default function Home() {
   const [nearestBearing, setNearestBearing] = useState(null);
   const [selectedShelterType, setSelectedShelterType] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [locationDetail, setLocationDetail] = useState('');
 
   const getBannerAlert = () => {
     if (activeTemp === null) return null;
@@ -480,9 +481,14 @@ export default function Home() {
         link.addEventListener('click', (e) => {
           e.preventDefault();
           const targetId = link.getAttribute('href').slice(1);
-          const target = document.getElementById(targetId);
-          if (target) {
-            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          // For Live Map: skip the heading, scroll directly to the map widget
+          const scrollTarget = targetId === 'dashboard'
+            ? (document.getElementById('map-widget') || document.getElementById(targetId))
+            : document.getElementById(targetId);
+          if (scrollTarget) {
+            const navH = document.querySelector('header')?.offsetHeight || 64;
+            const y = scrollTarget.getBoundingClientRect().top + window.scrollY - navH - 8;
+            window.scrollTo({ top: y, behavior: 'smooth' });
           }
         });
       });
@@ -538,10 +544,10 @@ export default function Home() {
             }
           });
 
-          // Glow + stick: triggers once when all items first become visible
-          const allVisible = scrollProgress > 0.5 && scrollProgress < 0.97;
+          // Glow + stick: show once all items visible, keep until clicked
+          const allVisible = scrollProgress > 0.5;
           const btn = document.getElementById('view-details-btn');
-          if (btn) {
+          if (btn && !btn.dataset.clicked) {
             if (allVisible) btn.classList.add('btn-glow');
             else btn.classList.remove('btn-glow');
           }
@@ -549,6 +555,12 @@ export default function Home() {
           if (allVisible && !wasAllVisible) {
             isStuck = true;
             accumulated = 0;
+            if (btn) {
+              btn.addEventListener('click', () => {
+                btn.classList.remove('btn-glow');
+                btn.dataset.clicked = '1';
+              }, { once: true });
+            }
           }
           if (!allVisible) isStuck = false;
           wasAllVisible = allVisible;
@@ -635,10 +647,12 @@ export default function Home() {
       if (!forceRefresh) {
         const cachedCoords = localStorage.getItem('safespot_coords');
         const cachedLoc = localStorage.getItem('safespot_location');
+        const cachedDetail = localStorage.getItem('safespot_location_detail');
         if (cachedCoords && cachedLoc) {
           try {
             setUserPos(JSON.parse(cachedCoords));
             setLocationText(cachedLoc);
+            setLocationDetail(cachedDetail || cachedLoc);
             return;
           } catch(e) {}
         }
@@ -661,24 +675,24 @@ export default function Home() {
             .then(res => res.json())
             .then(data => {
               const addr = data.address || {};
-              const neighbourhood = addr.suburb || addr.neighbourhood || addr.quarter || addr.city_district || '';
               const city = addr.city || addr.town || addr.village || '';
+              const province = addr.state || '';
               const postal = addr.postcode || '';
-              let label;
-              if (neighbourhood && city) {
-                label = postal ? `${neighbourhood}, ${city} ${postal}` : `${neighbourhood}, ${city}`;
-              } else if (city) {
-                label = postal ? `${city} ${postal}` : city;
-              } else {
-                label = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-              }
-              setLocationText(label);
-              localStorage.setItem('safespot_location', label);
+              // Navbar: "Toronto, Ontario"
+              const navLabel = city && province ? `${city}, ${province}` : city || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+              // Dashboard: "Toronto, Ontario M5A 1A1"
+              const detailLabel = navLabel + (postal ? ` ${postal}` : '');
+              setLocationText(navLabel);
+              setLocationDetail(detailLabel);
+              localStorage.setItem('safespot_location', navLabel);
+              localStorage.setItem('safespot_location_detail', detailLabel);
             })
             .catch(() => {
-              const label = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-              setLocationText(label);
-              localStorage.setItem('safespot_location', label);
+              const fallback = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+              setLocationText(fallback);
+              setLocationDetail(fallback);
+              localStorage.setItem('safespot_location', fallback);
+              localStorage.setItem('safespot_location_detail', fallback);
             });
         },
         () => {
@@ -768,9 +782,12 @@ export default function Home() {
                 <a key={href} href={href} onClick={() => setMobileMenuOpen(false)} className="hover:text-white transition-colors py-1">{label}</a>
               ))}
             </nav>
-            <button onClick={() => { requestUserLocation(true); setMobileMenuOpen(false); }} className="flex items-center gap-2 text-[13px] text-neutral-400 bg-white/5 border border-white/10 px-3 py-2 rounded-xl hover:bg-white/10 transition-colors">
-              <i data-lucide="map-pin" className="w-3.5 h-3.5 text-green-400"></i>
-              <span className="text-neutral-300">{locationText}</span>
+            <button onClick={() => { requestUserLocation(true); setMobileMenuOpen(false); }} className="self-start flex items-center gap-2 text-[13px] text-neutral-400 bg-white/5 border border-white/10 px-3 py-2 rounded-xl hover:bg-white/10 transition-colors">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-green-400 shrink-0">
+                <circle cx="12" cy="12" r="4"/>
+                <path d="M13 4.069V2h-2v2.069A8.01 8.01 0 0 0 4.069 11H2v2h2.069A8.008 8.008 0 0 0 11 19.931V22h2v-2.069A8.007 8.007 0 0 0 19.931 13H22v-2h-2.069A8.008 8.008 0 0 0 13 4.069zM12 18c-3.309 0-6-2.691-6-6s2.691-6 6-6 6 2.691 6 6-2.691 6-6 6z"/>
+              </svg>
+              <span className="text-neutral-300">{userPos ? locationText : 'Detect location'}</span>
             </button>
           </div>
         )}
@@ -1024,7 +1041,7 @@ export default function Home() {
         </div>
         {/*   Main App Mockup Image   */}
         {/*   Main App Mockup HTML   */}
-        <div className="w-full min-h-[760px] rounded-[16px] border border-white/10 bg-[#0a0a0a] overflow-hidden relative shadow-[0_40px_100px_rgba(255,255,255,0.03)] flex flex-col md:flex-row ring-1 ring-white/5">
+        <div id="map-widget" className="w-full min-h-[760px] rounded-[16px] border border-white/10 bg-[#0a0a0a] overflow-hidden relative shadow-[0_40px_100px_rgba(255,255,255,0.03)] flex flex-col md:flex-row ring-1 ring-white/5">
            
            {/*   Left Sidebar: Data Cards   */}
            <div className="w-full md:w-[280px] border-r border-white/5 bg-[#111111]/90 backdrop-blur-xl flex flex-col z-20 shrink-0">
@@ -1088,15 +1105,18 @@ export default function Home() {
                     <div className="flex flex-col min-w-0">
                       <span className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider">📍 Your Location</span>
                       <span className="text-[12px] text-cyan-400 font-semibold mt-0.5 truncate">
-                        {userPos ? locationText : '--, --'}
+                        {userPos ? (locationDetail || locationText) : '--, --'}
                       </span>
                     </div>
                     <button
                       onClick={() => requestUserLocation(true)}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-colors shrink-0"
-                      title="Update Location"
+                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-cyan-400 transition-colors shrink-0"
+                      title="Detect Location"
                     >
-                      ↺
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="12" cy="12" r="4"/>
+                        <path d="M13 4.069V2h-2v2.069A8.01 8.01 0 0 0 4.069 11H2v2h2.069A8.008 8.008 0 0 0 11 19.931V22h2v-2.069A8.007 8.007 0 0 0 19.931 13H22v-2h-2.069A8.008 8.008 0 0 0 13 4.069zM12 18c-3.309 0-6-2.691-6-6s2.691-6 6-6 6 2.691 6 6-2.691 6-6 6z"/>
+                      </svg>
                     </button>
                   </div>
 
@@ -1125,9 +1145,11 @@ export default function Home() {
                           </div>
                           <button
                             onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestCooling.lat},${nearestCooling.lng}`, "_blank"); }}
-                            className="text-blue-400 hover:text-blue-300 font-medium flex items-center gap-0.5"
+                            className="text-blue-400 hover:text-blue-200 font-medium flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-blue-400/15 hover:shadow-[0_0_10px_rgba(96,165,250,0.5)] transition-all duration-200"
                           >
-                            🗺️ Directions
+                            
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="currentColor"/></svg>
+                              Directions
                           </button>
                         </div>
                       </>
@@ -1161,9 +1183,11 @@ export default function Home() {
                           </div>
                           <button
                             onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestLibrary.lat},${nearestLibrary.lng}`, "_blank"); }}
-                            className="text-green-400 hover:text-green-300 font-medium flex items-center gap-0.5"
+                            className="text-green-400 hover:text-green-200 font-medium flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-green-400/15 hover:shadow-[0_0_10px_rgba(74,222,128,0.5)] transition-all duration-200"
                           >
-                            🗺️ Directions
+                            
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="currentColor"/></svg>
+                              Directions
                           </button>
                         </div>
                       </>
@@ -1187,11 +1211,11 @@ export default function Home() {
                 onClick={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
               >
-                <div className="flex flex-row flex-wrap justify-end gap-2">
-                  <button type="button" onClick={() => setSimulatedTemp(30)} className="text-[13px] px-3 py-2 rounded shadow-lg bg-yellow-500/90 hover:bg-yellow-400 text-black font-bold backdrop-blur-sm transition-transform active:scale-95">⚠️ 30°C</button>
-                  <button type="button" onClick={() => setSimulatedTemp(36)} className="text-[13px] px-3 py-2 rounded shadow-lg bg-orange-600/90 hover:bg-orange-500 text-white font-bold backdrop-blur-sm transition-transform active:scale-95">🚨 36°C</button>
-                  <button type="button" onClick={() => setSimulatedTemp(41)} className="text-[13px] px-3 py-2 rounded shadow-lg bg-red-700/90 hover:bg-red-600 text-white font-bold backdrop-blur-sm transition-transform active:scale-95">🔴 41°C</button>
-                  <button type="button" onClick={() => { setSimulatedTemp(null); setSensorTemp(20.0); if (fetchSensorRef.current) fetchSensorRef.current(); }} className="text-[13px] px-3 py-2 rounded shadow-lg bg-zinc-700/90 hover:bg-zinc-600 text-white font-bold backdrop-blur-sm transition-transform active:scale-95 ring-1 ring-white/20">✅ Reset</button>
+                <div className="flex flex-row flex-wrap justify-end gap-1.5">
+                  <button type="button" onClick={() => setSimulatedTemp(30)} className="text-[10px] md:text-[13px] px-2 md:px-3 py-1 md:py-2 rounded shadow-lg bg-yellow-500/90 hover:bg-yellow-400 text-black font-bold backdrop-blur-sm transition-transform active:scale-95">⚠️ 30°C</button>
+                  <button type="button" onClick={() => setSimulatedTemp(36)} className="text-[10px] md:text-[13px] px-2 md:px-3 py-1 md:py-2 rounded shadow-lg bg-orange-600/90 hover:bg-orange-500 text-white font-bold backdrop-blur-sm transition-transform active:scale-95">🚨 36°C</button>
+                  <button type="button" onClick={() => setSimulatedTemp(41)} className="text-[10px] md:text-[13px] px-2 md:px-3 py-1 md:py-2 rounded shadow-lg bg-red-700/90 hover:bg-red-600 text-white font-bold backdrop-blur-sm transition-transform active:scale-95">🔴 41°C</button>
+                  <button type="button" onClick={() => { setSimulatedTemp(null); setSensorTemp(20.0); if (fetchSensorRef.current) fetchSensorRef.current(); }} className="text-[10px] md:text-[13px] px-2 md:px-3 py-1 md:py-2 rounded shadow-lg bg-zinc-700/90 hover:bg-zinc-600 text-white font-bold backdrop-blur-sm transition-transform active:scale-95 ring-1 ring-white/20">✅ Reset</button>
                 </div>
 
                 {/* Heat zone level indicator */}
@@ -1221,8 +1245,8 @@ export default function Home() {
                 })()}
               </div>
 
-              {/* 🗺️ Horizontal Map Legend Floating Overlay */}
-              <div className="absolute bottom-3 left-3 z-[1000] bg-[#111]/85 backdrop-blur-md border border-white/10 rounded-lg px-3 py-2 flex items-center gap-4 text-[11px] text-neutral-300 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+              {/* 🗺️ Horizontal Map Legend Floating Overlay — desktop only */}
+              <div className="hidden md:flex absolute bottom-3 left-3 z-[1000] bg-[#111]/85 backdrop-blur-md border border-white/10 rounded-lg px-3 py-2 items-center gap-4 text-[11px] text-neutral-300 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
                 <div className="flex flex-col border-r border-white/10 pr-2">
                   <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Heat Island</span>
                   <span className="text-[9px] text-neutral-600">Historically hot zones</span>
@@ -1284,7 +1308,9 @@ export default function Home() {
                          </span>
                        )}
                      </div>
-                     <button onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestCooling.lat},${nearestCooling.lng}`, "_blank"); }} className="text-blue-400 font-medium">🗺️ Directions</button>
+                     <button onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestCooling.lat},${nearestCooling.lng}`, "_blank"); }} className="text-blue-400 hover:text-blue-200 font-medium flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-blue-400/15 hover:shadow-[0_0_10px_rgba(96,165,250,0.5)] transition-all duration-200">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                              Directions</button>
                    </div>
                  </>
                ) : <div className="text-[11px] text-neutral-500 mt-0.5">Detect location to calculate</div>}
@@ -1311,7 +1337,9 @@ export default function Home() {
                          </span>
                        )}
                      </div>
-                     <button onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestLibrary.lat},${nearestLibrary.lng}`, "_blank"); }} className="text-green-400 font-medium">🗺️ Directions</button>
+                     <button onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestLibrary.lat},${nearestLibrary.lng}`, "_blank"); }} className="text-green-400 hover:text-green-200 font-medium flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-green-400/15 hover:shadow-[0_0_10px_rgba(74,222,128,0.5)] transition-all duration-200">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                              Directions</button>
                    </div>
                  </>
                ) : <div className="text-[11px] text-neutral-500 mt-0.5">Detect location to calculate</div>}
