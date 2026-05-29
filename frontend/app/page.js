@@ -128,6 +128,46 @@ function getPillStyles(temp) {
   };
 }
 
+function getBearing(lat1, lng1, lat2, lng2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLng = toRad(lng2 - lng1);
+  const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+  const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
+
+function bearingToCompass(deg) {
+  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
+function pointInPolygon(point, polygon) {
+  const [px, py] = point;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function detectHeatZone(userPos, features) {
+  if (!userPos || !features || features.length === 0) return null;
+  const pt = [userPos.lng, userPos.lat];
+  const matching = features.filter(f => {
+    const geom = f.geometry;
+    if (!geom) return false;
+    const rings = geom.type === 'Polygon' ? [geom.coordinates[0]] : geom.type === 'MultiPolygon' ? geom.coordinates.map(p => p[0]) : [];
+    return rings.some(ring => pointInPolygon(pt, ring));
+  }).map(f => f.properties?.SurfTemp_Tess_MEAN ?? 0);
+  if (matching.length === 0) return null;
+  const maxTemp = Math.max(...matching);
+  return maxTemp >= 30 ? 'high' : maxTemp >= 25 ? 'medium' : 'low';
+}
+
 export default function Home() {
   const [locationText, setLocationText] = useState('Detect location');
 
@@ -144,6 +184,14 @@ export default function Home() {
   const [nearestShelter, setNearestShelter] = useState(null);
   const [nearestCooling, setNearestCooling] = useState(null);
   const [nearestLibrary, setNearestLibrary] = useState(null);
+  const [heatFeatures, setHeatFeatures] = useState([]);
+  const [currentZone, setCurrentZone] = useState(null);
+  const [nearestBearing, setNearestBearing] = useState(null);
+  const [selectedShelterType, setSelectedShelterType] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [locationDetail, setLocationDetail] = useState('');
+  const [locationFull, setLocationFull] = useState('');
+  const [locationModalOpen, setLocationModalOpen] = useState(false);
 
   const getBannerAlert = () => {
     if (activeTemp === null) return null;
@@ -188,16 +236,6 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (mapRef.current && userPos) {
-      mapRef.current.setView([userPos.lat, userPos.lng], 14);
-      // Optional: Add a marker for user
-      if (typeof L !== 'undefined') {
-        L.marker([userPos.lat, userPos.lng]).addTo(mapRef.current)
-          .bindPopup("You are here").openPopup();
-      }
-    }
-  }, [userPos]);
 
 
   // Poll Weather Data
@@ -242,10 +280,19 @@ export default function Home() {
     
     if (cooling.length > 0) setNearestCooling(cooling[0]);
     if (libraries.length > 0) setNearestLibrary(libraries[0]);
-    
+
     const overall = [...withDist].sort((a, b) => a.distance - b.distance);
-    setNearestShelter(overall[0]);
+    const nearest = overall[0];
+    setNearestShelter(nearest);
+    if (nearest) {
+      setNearestBearing(getBearing(userPos.lat, userPos.lng, nearest.lat, nearest.lng));
+      setSelectedShelterType(prev => prev ?? nearest.type);
+    }
   }, [userPos, sheltersList]);
+
+  useEffect(() => {
+    setCurrentZone(detectHeatZone(userPos, heatFeatures));
+  }, [userPos, heatFeatures]);
 
 
   useEffect(() => {
@@ -303,17 +350,17 @@ export default function Home() {
                 style: function(feature) {
                     const temp = feature.properties.SurfTemp_Tess_MEAN || 20;
                     let color, opacity;
-                    // 노란색 -> 주황색 -> 빨간색 순으로 명확한 온도 구분
                     if (temp >= 30) {
-                        color = "#dc2626"; opacity = 0.85; // 빨간색 (High Heat)
+                        color = "#dc2626"; opacity = 0.85;
                     } else if (temp >= 25) {
-                        color = "#f97316"; opacity = 0.65; // 주황색 (Moderate Heat)
+                        color = "#f97316"; opacity = 0.65;
                     } else {
-                        color = "#facc15"; opacity = 0.45; // 노란색 (Low Heat)
+                        color = "#facc15"; opacity = 0.45;
                     }
                     return { fillColor: color, fillOpacity: opacity, weight: 0, stroke: false };
                 }
             }).addTo(map);
+            if (data.features) setHeatFeatures(data.features);
         }).catch(e => console.error("Heat data load failed", e));
 
         fetch(COOLING_URL).then(r=>r.json()).then(data => {
@@ -346,11 +393,15 @@ export default function Home() {
             iconSize: [24, 24],
             iconAnchor: [12, 12]
         });
-        const userMarker = L.marker([initialLat, initialLng], {icon: userIcon}).addTo(map).bindTooltip("<b>You are here</b>", {direction: 'top', offset: [0, -10]});
+        let userMarker = null;
 
         window.addEventListener('safespot-gps-updated', (e) => {
             const { lat, lng } = e.detail;
-            userMarker.setLatLng([lat, lng]);
+            if (!userMarker) {
+                userMarker = L.marker([lat, lng], {icon: userIcon}).addTo(map).bindTooltip("<b>You are here</b>", {direction: 'top', offset: [0, -10]});
+            } else {
+                userMarker.setLatLng([lat, lng]);
+            }
             map.flyTo([lat, lng], 14, { duration: 1.2 });
         });
 
@@ -426,6 +477,23 @@ export default function Home() {
       backToTopBtn.addEventListener('click', () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       });
+
+      // Smooth scroll for nav links
+      navLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          const targetId = link.getAttribute('href').slice(1);
+          // For Live Map: skip the heading, scroll directly to the map widget
+          const scrollTarget = targetId === 'dashboard'
+            ? (document.getElementById('map-widget') || document.getElementById(targetId))
+            : document.getElementById(targetId);
+          if (scrollTarget) {
+            const navH = document.querySelector('header')?.offsetHeight || 64;
+            const y = scrollTarget.getBoundingClientRect().top + window.scrollY - navH - 8;
+            window.scrollTo({ top: y, behavior: 'smooth' });
+          }
+        });
+      });
       
       // Re-initialize icons just in case
       if (typeof window !== 'undefined' && window.lucide) {
@@ -436,18 +504,36 @@ export default function Home() {
       const hwSection = document.getElementById('how-it-works-simple');
       const hwItems = document.querySelectorAll('.hw-scroll-item');
       if(hwSection && hwItems.length > 0) {
+        let wasAllVisible = false;
+        let isStuck = false;
+        let stuckAt = 0;
+        let accumulated = 0;
+        const STICK_THRESHOLD = 187; // wheel delta px before releasing
+
+        // Wheel intercept for stick effect
+        window.addEventListener('wheel', (e) => {
+          if (!isStuck) return;
+          e.preventDefault();
+          accumulated += Math.abs(e.deltaY);
+          if (accumulated >= STICK_THRESHOLD) {
+            isStuck = false;
+            accumulated = 0;
+          }
+        }, { passive: false });
+
         window.addEventListener('scroll', () => {
           const rect = hwSection.getBoundingClientRect();
           const totalScrollHeight = hwSection.offsetHeight - window.innerHeight;
-          
+
           let scrollProgress = 0;
           if (rect.top <= 0) {
             scrollProgress = Math.abs(rect.top) / totalScrollHeight;
           }
-          
           scrollProgress = Math.max(0, Math.min(1, scrollProgress));
-          
-          let activeIndex = Math.floor(scrollProgress * hwItems.length);
+
+          // Items appear during first 55% of scroll
+          const itemProgress = Math.min(scrollProgress / 0.55, 1);
+          let activeIndex = Math.floor(itemProgress * hwItems.length);
           if (activeIndex >= hwItems.length) activeIndex = hwItems.length - 1;
 
           hwItems.forEach((item, index) => {
@@ -459,7 +545,43 @@ export default function Home() {
               item.classList.add('opacity-0', 'translate-y-8', 'pointer-events-none');
             }
           });
-        });
+
+          // Glow + stick: show once all items visible, keep until clicked
+          const allVisible = scrollProgress > 0.5;
+          const btn = document.getElementById('view-details-btn');
+          if (btn && !btn.dataset.clicked) {
+            if (allVisible) btn.classList.add('btn-glow');
+            else btn.classList.remove('btn-glow');
+          }
+
+          if (allVisible && !wasAllVisible) {
+            isStuck = true;
+            accumulated = 0;
+            if (btn) {
+              btn.addEventListener('click', () => {
+                btn.classList.remove('btn-glow');
+                btn.dataset.clicked = '1';
+              }, { once: true });
+            }
+          }
+          if (!allVisible) isStuck = false;
+          wasAllVisible = allVisible;
+        }, { passive: true });
+      }
+
+      // News citation reveal
+      const citeItems = document.querySelectorAll('.cite-item');
+      if (citeItems.length > 0) {
+        const citeObserver = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              entry.target.classList.remove('opacity-0', 'translate-y-4');
+              entry.target.classList.add('opacity-100', 'translate-y-0');
+              citeObserver.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.2 });
+        citeItems.forEach(item => citeObserver.observe(item));
       }
 
       // -------------------------------------------------------------
@@ -497,6 +619,7 @@ export default function Home() {
             lat: coords ? coords.lat : null,
             lng: coords ? coords.lng : null,
             name: f.properties.LocationName || f.properties.locationName || f.properties.NAME || 'Cooling Center',
+            address: f.properties.address || f.properties.Address || f.properties.ADDRESSLINE1 || '',
             type: 'cooling'
           };
         }).filter(s => s.lat !== null && s.lng !== null);
@@ -509,6 +632,7 @@ export default function Home() {
             lat: coords ? coords.lat : null,
             lng: coords ? coords.lng : null,
             name: f.properties.BranchName || 'Library',
+            address: f.properties.Address || f.properties.address || '',
             type: 'library'
           };
         }).filter(s => s.lat !== null && s.lng !== null);
@@ -525,10 +649,14 @@ export default function Home() {
       if (!forceRefresh) {
         const cachedCoords = localStorage.getItem('safespot_coords');
         const cachedLoc = localStorage.getItem('safespot_location');
+        const cachedDetail = localStorage.getItem('safespot_location_detail');
+        const cachedFull = localStorage.getItem('safespot_location_full');
         if (cachedCoords && cachedLoc) {
           try {
             setUserPos(JSON.parse(cachedCoords));
             setLocationText(cachedLoc);
+            setLocationDetail(cachedDetail || cachedLoc);
+            setLocationFull(cachedFull || cachedDetail || cachedLoc);
             return;
           } catch(e) {}
         }
@@ -547,20 +675,37 @@ export default function Home() {
           localStorage.setItem('safespot_coords', JSON.stringify(coords));
           window.dispatchEvent(new CustomEvent("safespot-gps-updated", { detail: coords }));
           
-          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`)
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`)
             .then(res => res.json())
             .then(data => {
-              const address = data.address || {};
-              const city = address.city || address.town || address.village || address.suburb || '';
-              const state = address.state || '';
-              const label = city && state ? `${city}, ${state}` : `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-              setLocationText(label);
-              localStorage.setItem('safespot_location', label);
+              const addr = data.address || {};
+              const city = addr.city || addr.town || addr.village || '';
+              const province = addr.state || '';
+              const postal = addr.postcode || '';
+              const road = addr.road || '';
+              const houseNo = addr.house_number || '';
+              const street = houseNo && road ? `${houseNo} ${road}` : road;
+              // Navbar: "Toronto, Ontario"
+              const navLabel = city && province ? `${city}, ${province}` : city || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+              // Dashboard card: "Toronto, Ontario M5A 1A1"
+              const detailLabel = navLabel + (postal ? ` ${postal}` : '');
+              // Modal: "123 Main St, Toronto, Ontario M5A 1A1"
+              const fullLabel = street ? `${street}, ${detailLabel}` : detailLabel;
+              setLocationText(navLabel);
+              setLocationDetail(detailLabel);
+              setLocationFull(fullLabel);
+              localStorage.setItem('safespot_location', navLabel);
+              localStorage.setItem('safespot_location_detail', detailLabel);
+              localStorage.setItem('safespot_location_full', fullLabel);
             })
             .catch(() => {
-              const label = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-              setLocationText(label);
-              localStorage.setItem('safespot_location', label);
+              const fallback = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+              setLocationText(fallback);
+              setLocationDetail(fallback);
+              setLocationFull(fallback);
+              localStorage.setItem('safespot_location', fallback);
+              localStorage.setItem('safespot_location_detail', fallback);
+              localStorage.setItem('safespot_location_full', fallback);
             });
         },
         () => {
@@ -570,9 +715,6 @@ export default function Home() {
       );
   };
 
-  useEffect(() => {
-    requestUserLocation(false);
-  }, []);
 
   return (
     <>
@@ -580,6 +722,77 @@ export default function Home() {
       <Script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" strategy="beforeInteractive" />
       <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
       <AlertBanner alert={getBannerAlert()} />
+
+      {/* Location Modal */}
+      {locationModalOpen && userPos && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm"
+          onClick={() => setLocationModalOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-sm bg-[#0d0d0d] border border-white/10 rounded-2xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.8)] flex flex-col gap-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-cyan-400">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="12" r="4"/>
+                  <path d="M13 4.069V2h-2v2.069A8.01 8.01 0 0 0 4.069 11H2v2h2.069A8.008 8.008 0 0 0 11 19.931V22h2v-2.069A8.007 8.007 0 0 0 19.931 13H22v-2h-2.069A8.008 8.008 0 0 0 13 4.069zM12 18c-3.309 0-6-2.691-6-6s2.691-6 6-6 6 2.691 6 6-2.691 6-6 6z"/>
+                </svg>
+                <span className="font-semibold text-[15px]">Your Location</span>
+              </div>
+              <button
+                onClick={() => setLocationModalOpen(false)}
+                className="p-1.5 rounded-lg text-neutral-500 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* Address */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] text-neutral-500 uppercase tracking-widest font-medium">Address</span>
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-[22px] font-semibold text-white leading-tight">
+                  {locationFull || locationDetail || locationText || 'Unknown'}
+                </span>
+                <button
+                  onClick={() => navigator.clipboard?.writeText(locationFull || locationDetail || locationText || '')}
+                  className="shrink-0 mt-1 p-1.5 rounded-lg text-neutral-500 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Copy address"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="h-px bg-white/[0.06]"></div>
+
+            {/* Coordinates */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] text-neutral-500 uppercase tracking-widest font-medium">Coordinates (5 decimal places)</span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[26px] font-mono font-bold text-cyan-400 leading-tight tracking-tight">
+                  {userPos.lat.toFixed(5)},<br/>{userPos.lng.toFixed(5)}
+                </span>
+                <button
+                  onClick={() => navigator.clipboard?.writeText(`${userPos.lat.toFixed(5)}, ${userPos.lng.toFixed(5)}`)}
+                  className="shrink-0 p-1.5 rounded-lg text-neutral-500 hover:text-cyan-400 hover:bg-white/10 transition-colors"
+                  title="Copy coordinates"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
+              </div>
+            </div>
+
+            {/* 911 note */}
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5 text-[12px] text-red-300 leading-relaxed">
+              🚨 <span className="font-semibold">In an emergency:</span> Call 911 and read these coordinates aloud.
+            </div>
+          </div>
+        </div>
+      )}
 
       
 
@@ -591,30 +804,29 @@ export default function Home() {
       <header className="w-full sticky top-0 z-50 bg-[#000000]/80 backdrop-blur-md border-b border-white/[0.05]">
         <div className="w-full flex items-center justify-between px-6 py-4 max-w-[1200px] mx-auto">
           <a href="#" className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer">
-            {/*   SafeSpot Logo mockup   */}
             <div className="flex gap-1 items-center justify-center">
               <div className="w-5 h-5 rounded-full border-[3px] border-white relative before:absolute before:inset-0 before:m-auto before:w-2 before:h-2 before:bg-white before:rounded-full mix-blend-screen opacity-90 -ml-1"></div>
             </div>
             <span className="font-semibold text-[17px] tracking-tight">SafeSpot</span>
           </a>
-        
-        <div className="flex items-center gap-3">
-          <nav className="hidden md:flex items-center gap-7 text-[13px] text-neutral-400 font-medium">
-            <a href="#story" className="hover:text-white transition-colors">Why SafeSpot</a>
-            <a href="#how-it-works-simple" className="hover:text-white transition-colors">How It Works</a>
-            <a href="#dashboard" className="hover:text-white transition-colors">Live Map</a>
-            <a href="#open-source" className="hover:text-white transition-colors">Open Source</a>
-            <a href="#team" className="hover:text-white transition-colors">Team</a>
 
-          </nav>
+          <div className="flex items-center gap-3">
+            {/* Desktop nav links */}
+            <nav className="hidden md:flex items-center gap-7 text-[13px] text-neutral-400 font-medium">
+              <a href="#story" className="hover:text-white transition-colors">Why SafeSpot</a>
+              <a href="#how-it-works-simple" className="hover:text-white transition-colors">How It Works</a>
+              <a href="#dashboard" className="hover:text-white transition-colors">Live Map</a>
+              <a href="#open-source" className="hover:text-white transition-colors">Open Source</a>
+              <a href="#team-sponsors" className="hover:text-white transition-colors">Team</a>
+            </nav>
 
-          <div className="Header_navDivider__Jexuv hide-tablet w-[1px] h-4 bg-white/20 mx-1"></div>
-  
-          <div className="hidden md:flex items-center gap-3 text-[13px] font-medium">
+            <div className="hidden md:block w-[1px] h-4 bg-white/20 mx-1"></div>
+
+            {/* Temperature pill — always visible */}
             {(() => {
               const styles = getPillStyles(activeTemp);
               return (
-                <a href="#dashboard" className={`${styles.bg} px-3.5 py-1.5 rounded-full hover:opacity-90 transition-all active:scale-95 flex items-center gap-2`}>
+                <a href="#dashboard" className={`${styles.bg} px-3.5 py-1.5 rounded-full hover:opacity-90 transition-all active:scale-95 flex items-center gap-2 text-[13px] font-medium`}>
                   <span className="relative flex h-2 w-2">
                     <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${styles.ping} opacity-75`}></span>
                     <span className={`relative inline-flex rounded-full h-2 w-2 ${styles.dot}`}></span>
@@ -624,13 +836,45 @@ export default function Home() {
                 </a>
               );
             })()}
-            <button id="location-pill" onClick={() => requestUserLocation(true)} className="flex items-center gap-1.5 text-neutral-400 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer">
+
+            {/* Detect location — desktop only */}
+            <button id="location-pill" onClick={() => requestUserLocation(true)} className="hidden md:flex items-center gap-1.5 text-neutral-400 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer text-[13px]">
               <i data-lucide="map-pin" className="w-3 h-3 text-green-400"></i>
               <span id="location-text" className="text-neutral-300 text-[12px]">{locationText}</span>
             </button>
+
+            {/* Hamburger — mobile only */}
+            <button
+              className="md:hidden p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors"
+              onClick={() => setMobileMenuOpen(o => !o)}
+              aria-label="Menu"
+            >
+              {mobileMenuOpen ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              )}
+            </button>
           </div>
         </div>
-      </div>
+
+        {/* Mobile dropdown menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-white/[0.05] bg-[#000000]/95 backdrop-blur-md px-6 py-4 flex flex-col gap-4">
+            <nav className="flex flex-col gap-3 text-[15px] text-neutral-400 font-medium">
+              {[['#story','Why SafeSpot'],['#how-it-works-simple','How It Works'],['#dashboard','Live Map'],['#open-source','Open Source'],['#team-sponsors','Team']].map(([href, label]) => (
+                <a key={href} href={href} onClick={() => setMobileMenuOpen(false)} className="hover:text-white transition-colors py-1">{label}</a>
+              ))}
+            </nav>
+            <button onClick={() => { requestUserLocation(true); setMobileMenuOpen(false); }} className="self-start flex items-center gap-2 text-[13px] text-neutral-400 bg-white/5 border border-white/10 px-3 py-2 rounded-xl hover:bg-white/10 transition-colors">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-green-400 shrink-0">
+                <circle cx="12" cy="12" r="4"/>
+                <path d="M13 4.069V2h-2v2.069A8.01 8.01 0 0 0 4.069 11H2v2h2.069A8.008 8.008 0 0 0 11 19.931V22h2v-2.069A8.007 8.007 0 0 0 19.931 13H22v-2h-2.069A8.008 8.008 0 0 0 13 4.069zM12 18c-3.309 0-6-2.691-6-6s2.691-6 6-6 6 2.691 6 6-2.691 6-6 6z"/>
+              </svg>
+              <span className="text-neutral-300">{userPos ? locationText : 'Detect location'}</span>
+            </button>
+          </div>
+        )}
       </header>
 
       {/*   Hero Section   */}
@@ -657,17 +901,17 @@ export default function Home() {
           </div>
           
           <div className="flex flex-col gap-3 shrink-0 md:mb-1">
-            <a href="https://www.cbc.ca/news/canada/british-columbia/bc-heat-dome-sudden-deaths-570-1.6122316" target="_blank" className="flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 transition-colors group">
+            <a href="https://www.cbc.ca/news/canada/british-columbia/bc-heat-dome-sudden-deaths-570-1.6122316" target="_blank" className="cite-item opacity-0 translate-y-4 transition-all duration-500 flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 group">
               <span className="text-xs font-semibold bg-red-500/20 text-red-400 px-2.5 py-1 rounded-full w-[60px] text-center">CBC</span>
               <span className="text-neutral-300">B.C. Sudden Deaths (2021)</span>
               <i data-lucide="arrow-up-right" className="w-4 h-4 text-neutral-500 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform"></i>
             </a>
-            <a href="https://climateinstitute.ca/reports/extreme-heat-in-canada/" target="_blank" className="flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 transition-colors group">
+            <a href="https://climateinstitute.ca/reports/extreme-heat-in-canada/" target="_blank" className="cite-item opacity-0 translate-y-4 transition-all duration-500 [transition-delay:150ms] flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 group">
               <span className="text-xs font-semibold bg-cyan-500/20 text-cyan-400 px-2.5 py-1 rounded-full w-[60px] text-center">Report</span>
               <span className="text-neutral-300">Extreme Heat in Canada (2023)</span>
               <i data-lucide="arrow-up-right" className="w-4 h-4 text-neutral-500 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform"></i>
             </a>
-            <a href="https://www.cbc.ca/news/canada/montreal/heat-wave-death-toll-1.4740031" target="_blank" className="flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 transition-colors group">
+            <a href="https://www.cbc.ca/news/canada/montreal/heat-wave-death-toll-1.4740031" target="_blank" className="cite-item opacity-0 translate-y-4 transition-all duration-500 [transition-delay:300ms] flex items-center gap-3 text-sm font-medium border border-white/10 bg-white/5 hover:bg-white/10 rounded-full pl-3 pr-4 py-2 group">
               <span className="text-xs font-semibold bg-red-500/20 text-red-400 px-2.5 py-1 rounded-full w-[60px] text-center">CBC</span>
               <span className="text-neutral-300">Montreal Heat Wave (2018)</span>
               <i data-lucide="arrow-up-right" className="w-4 h-4 text-neutral-500 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform"></i>
@@ -683,7 +927,7 @@ export default function Home() {
 
 
       {/*  How It Works (Simple Horizontal View - Scrollytelling)  */}
-      <section id="how-it-works-simple" className="w-full relative h-[200vh] bg-[#000000]">
+      <section id="how-it-works-simple" className="w-full relative h-[260vh] bg-[#000000]">
         <div className="sticky top-0 h-screen w-full flex flex-col justify-center overflow-hidden border-b border-white/[0.05]">
           <div className="w-full max-w-[1200px] mx-auto px-6">
             <div className="mb-20">
@@ -742,7 +986,7 @@ export default function Home() {
               </div>
             </div>
 
-            <button onClick={() => {document.getElementById('how-it-works-simple').classList.add('hidden'); document.getElementById('how-it-works-detailed').classList.remove('hidden'); setTimeout(() => document.getElementById('how-it-works-detailed').scrollIntoView({ behavior: 'smooth' }), 50);}} className="flex items-center gap-2 text-[15px] font-medium text-neutral-400 hover:text-white transition-colors group mt-10">
+            <button id="view-details-btn" onClick={() => {document.getElementById('how-it-works-simple').classList.add('hidden'); document.getElementById('how-it-works-detailed').classList.remove('hidden'); setTimeout(() => document.getElementById('how-it-works-detailed').scrollIntoView({ behavior: 'smooth' }), 50);}} className="flex items-center gap-2 text-[15px] font-medium text-neutral-400 hover:text-white transition-all group mt-10 px-4 py-2 rounded-lg">
               <span>View all details</span> <span className="group-hover:translate-x-1 transition-transform">→</span>
             </button>
           </div>
@@ -871,7 +1115,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="dashboard" className="w-full max-w-[1200px] mx-auto py-32 px-6 md:px-12 border-b border-white/[0.05] scroll-mt-24">
+      <section id="dashboard" className="w-full max-w-[1200px] mx-auto py-16 px-6 md:px-12 border-b border-white/[0.05] scroll-mt-16">
         <div className="mb-16">
           <p className="text-sm uppercase tracking-widest text-orange-400 mb-4 font-semibold">Live Map</p>
           <h2 className="text-3xl md:text-[40px] font-medium tracking-tight text-white mb-4">Interactive Heat Dashboard</h2>
@@ -881,7 +1125,7 @@ export default function Home() {
         </div>
         {/*   Main App Mockup Image   */}
         {/*   Main App Mockup HTML   */}
-        <div className="w-full min-h-[760px] rounded-[16px] border border-white/10 bg-[#0a0a0a] overflow-hidden relative shadow-[0_40px_100px_rgba(255,255,255,0.03)] flex flex-col md:flex-row ring-1 ring-white/5">
+        <div id="map-widget" className="w-full min-h-[760px] rounded-[16px] border border-white/10 bg-[#0a0a0a] overflow-hidden relative shadow-[0_40px_100px_rgba(255,255,255,0.03)] flex flex-col md:flex-row ring-1 ring-white/5">
            
            {/*   Left Sidebar: Data Cards   */}
            <div className="w-full md:w-[280px] border-r border-white/5 bg-[#111111]/90 backdrop-blur-xl flex flex-col z-20 shrink-0">
@@ -941,36 +1185,69 @@ export default function Home() {
 
                  <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
                   {/*  Your Location Bar  */}
-                  <div className="bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider">📍 Your Location</span>
-                      <span className="text-[13px] font-mono text-cyan-400 font-semibold mt-0.5">
-                        {userPos ? `${userPos.lat.toFixed(5)}, ${userPos.lng.toFixed(5)}` : '--, --'}
+                  <div
+                    className={`bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2.5 flex items-start justify-between gap-2 transition-all duration-300 ${userPos ? 'cursor-pointer location-card-hover' : ''}`}
+                    onClick={() => userPos && setLocationModalOpen(true)}
+                  >
+                    <div className="flex flex-col min-w-0 gap-1">
+                      <span className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider">
+                        📍 Your Location
                       </span>
+                      {userPos ? (
+                        <>
+                          <span className="text-[12px] text-cyan-400 font-semibold truncate">
+                            {locationDetail || locationText || 'Locating...'}
+                          </span>
+                          <span className="text-[10px] font-mono text-neutral-400 tracking-tight">
+                            {userPos.lat.toFixed(5)}, {userPos.lng.toFixed(5)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-[12px] text-neutral-500">--, --</span>
+                      )}
                     </div>
-                    <button 
-                      onClick={() => requestUserLocation(true)} 
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-colors" 
-                      title="Update Location"
+                    <button
+                      onClick={(e) => { e.stopPropagation(); requestUserLocation(true); }}
+                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-cyan-400 transition-colors shrink-0 mt-0.5"
+                      title="Detect Location"
                     >
-                      ↺
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="12" cy="12" r="4"/>
+                        <path d="M13 4.069V2h-2v2.069A8.01 8.01 0 0 0 4.069 11H2v2h2.069A8.008 8.008 0 0 0 11 19.931V22h2v-2.069A8.007 8.007 0 0 0 19.931 13H22v-2h-2.069A8.008 8.008 0 0 0 13 4.069zM12 18c-3.309 0-6-2.691-6-6s2.691-6 6-6 6 2.691 6 6-2.691 6-6 6z"/>
+                      </svg>
                     </button>
                   </div>
 
-                  {/*  Nearest Cooling Centre Card  */}
-                  <div className="bg-[#141824]/40 border border-blue-500/20 rounded-xl p-3 flex flex-col gap-1">
-                    <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">❄️ Nearest Cooling Centre</div>
+                  {/*  Nearest Cooling Centre Card — desktop sidebar only; mobile shows below map  */}
+                  <div
+                    className={`hidden md:flex flex-col gap-1 border rounded-xl p-3 cursor-pointer transition-all ${selectedShelterType === 'cooling' ? 'bg-[#141824]/80 border-blue-400/60 ring-1 ring-blue-400/30' : 'bg-[#141824]/40 border-blue-500/20 hover:border-blue-400/40'}`}
+                    onClick={() => userPos && nearestCooling && setSelectedShelterType('cooling')}
+                  >
+                    <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center justify-between gap-1">
+                      <span>❄️ Nearest Cooling Centre</span>
+                      {selectedShelterType === 'cooling' && <span className="text-[9px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded-full">Selected</span>}
+                    </div>
                     {userPos && nearestCooling ? (
                       <>
                         <div className="text-[13px] font-semibold text-white truncate mt-1" title={nearestCooling.name}>{nearestCooling.name}</div>
                         <div className="text-[10px] text-neutral-400 truncate">{nearestCooling.address || 'Address not listed'}</div>
                         <div className="flex items-center justify-between mt-1 text-[11px]">
-                          <span className="font-semibold text-blue-400">{nearestCooling.distance.toFixed(2)} km</span>
-                          <button 
-                            onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestCooling.lat},${nearestCooling.lng}`, "_blank")}
-                            className="text-blue-400 hover:text-blue-300 font-medium flex items-center gap-0.5"
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-blue-400">{nearestCooling.distance.toFixed(2)} km</span>
+                            {selectedShelterType === 'cooling' && (
+                              <span className="flex items-center gap-0.5 text-cyan-400">
+                                <span style={{ transform: `rotate(${getBearing(userPos.lat, userPos.lng, nearestCooling.lat, nearestCooling.lng)}deg)`, display: 'inline-block' }}>↑</span>
+                                {bearingToCompass(getBearing(userPos.lat, userPos.lng, nearestCooling.lat, nearestCooling.lng))}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestCooling.lat},${nearestCooling.lng}`, "_blank"); }}
+                            className="text-blue-400 hover:text-blue-200 font-medium flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-blue-400/15 hover:shadow-[0_0_10px_rgba(96,165,250,0.5)] transition-all duration-200"
                           >
-                            🗺️ Directions
+                            
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="currentColor"/></svg>
+                              Directions
                           </button>
                         </div>
                       </>
@@ -979,20 +1256,36 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/*  Nearest Library Card  */}
-                  <div className="bg-[#121c17]/40 border border-green-500/20 rounded-xl p-3 flex flex-col gap-1">
-                    <div className="text-[10px] font-bold text-green-400 uppercase tracking-wider flex items-center gap-1">📚 Nearest Library</div>
+                  {/*  Nearest Library Card — desktop sidebar only  */}
+                  <div
+                    className={`hidden md:flex flex-col gap-1 border rounded-xl p-3 cursor-pointer transition-all ${selectedShelterType === 'library' ? 'bg-[#121c17]/80 border-green-400/60 ring-1 ring-green-400/30' : 'bg-[#121c17]/40 border-green-500/20 hover:border-green-400/40'}`}
+                    onClick={() => userPos && nearestLibrary && setSelectedShelterType('library')}
+                  >
+                    <div className="text-[10px] font-bold text-green-400 uppercase tracking-wider flex items-center justify-between gap-1">
+                      <span>📚 Nearest Library</span>
+                      {selectedShelterType === 'library' && <span className="text-[9px] bg-green-500/20 text-green-300 px-1.5 py-0.5 rounded-full">Selected</span>}
+                    </div>
                     {userPos && nearestLibrary ? (
                       <>
                         <div className="text-[13px] font-semibold text-white truncate mt-1" title={nearestLibrary.name}>{nearestLibrary.name}</div>
                         <div className="text-[10px] text-neutral-400 truncate">{nearestLibrary.address || 'Address not listed'}</div>
                         <div className="flex items-center justify-between mt-1 text-[11px]">
-                          <span className="font-semibold text-green-400">{nearestLibrary.distance.toFixed(2)} km</span>
-                          <button 
-                            onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestLibrary.lat},${nearestLibrary.lng}`, "_blank")}
-                            className="text-green-400 hover:text-green-300 font-medium flex items-center gap-0.5"
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-green-400">{nearestLibrary.distance.toFixed(2)} km</span>
+                            {selectedShelterType === 'library' && (
+                              <span className="flex items-center gap-0.5 text-cyan-400">
+                                <span style={{ transform: `rotate(${getBearing(userPos.lat, userPos.lng, nearestLibrary.lat, nearestLibrary.lng)}deg)`, display: 'inline-block' }}>↑</span>
+                                {bearingToCompass(getBearing(userPos.lat, userPos.lng, nearestLibrary.lat, nearestLibrary.lng))}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestLibrary.lat},${nearestLibrary.lng}`, "_blank"); }}
+                            className="text-green-400 hover:text-green-200 font-medium flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-green-400/15 hover:shadow-[0_0_10px_rgba(74,222,128,0.5)] transition-all duration-200"
                           >
-                            🗺️ Directions
+                            
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="currentColor"/></svg>
+                              Directions
                           </button>
                         </div>
                       </>
@@ -1006,39 +1299,70 @@ export default function Home() {
            </div>
            
            {/*   Right Area: Map Visualization   */}
-           <div className="flex-1 relative bg-[#050505] overflow-hidden flex flex-col">
+           <div className="flex-1 min-h-[420px] relative bg-[#050505] overflow-hidden flex flex-col">
               {/*  Actual Map Container  */}
               <div id="map" className="absolute inset-0 z-0"></div>
-              {/* 🧪 Test buttons */}
-              <div 
-                className="absolute top-4 right-4 z-[1000] flex flex-row flex-wrap justify-end gap-2 pointer-events-auto"
+              {/* 🧪 Test buttons + zone info */}
+              <div
+                className="absolute top-4 right-4 z-[1000] flex flex-col items-end gap-2 pointer-events-auto"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
               >
-                <button type="button" onClick={() => setSimulatedTemp(30)} className="text-[13px] px-3 py-2 rounded shadow-lg bg-yellow-500/90 hover:bg-yellow-400 text-black font-bold backdrop-blur-sm transition-transform active:scale-95">⚠️ 30°C</button>
-                <button type="button" onClick={() => setSimulatedTemp(36)} className="text-[13px] px-3 py-2 rounded shadow-lg bg-orange-600/90 hover:bg-orange-500 text-white font-bold backdrop-blur-sm transition-transform active:scale-95">🚨 36°C</button>
-                <button type="button" onClick={() => setSimulatedTemp(41)} className="text-[13px] px-3 py-2 rounded shadow-lg bg-red-700/90 hover:bg-red-600 text-white font-bold backdrop-blur-sm transition-transform active:scale-95">🔴 41°C</button>
-                <button type="button" onClick={() => { setSimulatedTemp(null); setSensorTemp(20.0); if (fetchSensorRef.current) fetchSensorRef.current(); }} className="text-[13px] px-3 py-2 rounded shadow-lg bg-zinc-700/90 hover:bg-zinc-600 text-white font-bold backdrop-blur-sm transition-transform active:scale-95 ring-1 ring-white/20">✅ Reset</button>
+                <div className="flex flex-row flex-wrap justify-end gap-1.5">
+                  <button type="button" onClick={() => setSimulatedTemp(30)} className="text-[10px] md:text-[13px] px-2 md:px-3 py-1 md:py-2 rounded shadow-lg bg-yellow-500/90 hover:bg-yellow-400 text-black font-bold backdrop-blur-sm transition-transform active:scale-95">⚠️ 30°C</button>
+                  <button type="button" onClick={() => setSimulatedTemp(36)} className="text-[10px] md:text-[13px] px-2 md:px-3 py-1 md:py-2 rounded shadow-lg bg-orange-600/90 hover:bg-orange-500 text-white font-bold backdrop-blur-sm transition-transform active:scale-95">🚨 36°C</button>
+                  <button type="button" onClick={() => setSimulatedTemp(41)} className="text-[10px] md:text-[13px] px-2 md:px-3 py-1 md:py-2 rounded shadow-lg bg-red-700/90 hover:bg-red-600 text-white font-bold backdrop-blur-sm transition-transform active:scale-95">🔴 41°C</button>
+                  <button type="button" onClick={() => { setSimulatedTemp(null); setSensorTemp(20.0); if (fetchSensorRef.current) fetchSensorRef.current(); }} className="text-[10px] md:text-[13px] px-2 md:px-3 py-1 md:py-2 rounded shadow-lg bg-zinc-700/90 hover:bg-zinc-600 text-white font-bold backdrop-blur-sm transition-transform active:scale-95 ring-1 ring-white/20">✅ Reset</button>
+                </div>
+
+                {/* Heat zone level indicator */}
+                {userPos && currentZone && (
+                  <div className="bg-[#111]/85 backdrop-blur-md border border-white/10 rounded-lg px-3 py-1.5 text-[12px] text-neutral-200 shadow-[0_4px_12px_rgba(0,0,0,0.5)] flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Zone</span>
+                    <span className={`font-bold uppercase ${currentZone === 'high' ? 'text-red-400' : currentZone === 'medium' ? 'text-orange-400' : 'text-yellow-400'}`}>
+                      {currentZone}
+                    </span>
+                    <span className="text-[14px]">{currentZone === 'high' ? '🔴' : currentZone === 'medium' ? '🟠' : '🟡'}</span>
+                  </div>
+                )}
+
+                {/* Direction arrow synced with selected shelter */}
+                {(() => {
+                  const sel = selectedShelterType === 'cooling' ? nearestCooling : selectedShelterType === 'library' ? nearestLibrary : null;
+                  if (!userPos || !sel) return null;
+                  const bearing = getBearing(userPos.lat, userPos.lng, sel.lat, sel.lng);
+                  return (
+                    <div className="bg-[#111]/85 backdrop-blur-md border border-white/10 rounded-lg px-3 py-1.5 text-[12px] text-neutral-200 shadow-[0_4px_12px_rgba(0,0,0,0.5)] flex items-center gap-2">
+                      <span style={{ transform: `rotate(${bearing}deg)`, display: 'inline-block', lineHeight: 1 }} className="text-[16px]">↑</span>
+                      <span className="font-bold text-cyan-400">{bearingToCompass(bearing)}</span>
+                      <span className="text-neutral-400">{sel.type === 'cooling' ? '❄️' : '📚'}</span>
+                      <span className="text-neutral-300">{sel.distance.toFixed(1)} km</span>
+                    </div>
+                  );
+                })()}
               </div>
 
-              {/* 🗺️ Horizontal Map Legend Floating Overlay */}
-              <div className="absolute bottom-3 left-3 z-[1000] bg-[#111]/85 backdrop-blur-md border border-white/10 rounded-lg px-3 py-2 flex items-center gap-4 text-[11px] text-neutral-300 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
-                <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider border-r border-white/10 pr-2">Layers</span>
-                
-                {/* Heat levels */}
+              {/* 🗺️ Horizontal Map Legend Floating Overlay — desktop only */}
+              <div className="hidden md:flex absolute bottom-3 left-3 z-[1000] bg-[#111]/85 backdrop-blur-md border border-white/10 rounded-lg px-3 py-2 items-center gap-4 text-[11px] text-neutral-300 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+                <div className="flex flex-col border-r border-white/10 pr-2">
+                  <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Heat Island</span>
+                  <span className="text-[9px] text-neutral-600">Historically hot zones</span>
+                </div>
+
+                {/* Heat island intensity levels */}
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1">
                     <div className="w-2.5 h-2.5 rounded bg-[#dc2626]/85 border border-red-500/50 shrink-0"></div>
-                    <span>High</span>
+                    <span>Extreme</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <div className="w-2.5 h-2.5 rounded bg-[#f97316]/65 border border-orange-500/50 shrink-0"></div>
-                    <span>Mid</span>
+                    <span>Moderate</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <div className="w-2.5 h-2.5 rounded bg-[#facc15]/45 border border-yellow-500/50 shrink-0"></div>
-                    <span>Low</span>
+                    <span>Mild</span>
                   </div>
                 </div>
 
@@ -1056,6 +1380,68 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+           </div>
+
+           {/* Mobile-only shelter cards: below map */}
+           <div className="md:hidden border-t border-white/5 bg-[#111111]/90 p-4 flex flex-col gap-3">
+             {/* Cooling */}
+             <div
+               className={`border rounded-xl p-3 flex flex-col gap-1 cursor-pointer transition-all ${selectedShelterType === 'cooling' ? 'bg-[#141824]/80 border-blue-400/60 ring-1 ring-blue-400/30' : 'bg-[#141824]/40 border-blue-500/20'}`}
+               onClick={() => userPos && nearestCooling && setSelectedShelterType('cooling')}
+             >
+               <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center justify-between gap-1">
+                 <span>❄️ Nearest Cooling Centre</span>
+                 {selectedShelterType === 'cooling' && <span className="text-[9px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded-full">Selected</span>}
+               </div>
+               {userPos && nearestCooling ? (
+                 <>
+                   <div className="text-[13px] font-semibold text-white truncate mt-1">{nearestCooling.name}</div>
+                   <div className="flex items-center justify-between mt-1 text-[11px]">
+                     <div className="flex items-center gap-2">
+                       <span className="font-semibold text-blue-400">{nearestCooling.distance.toFixed(2)} km</span>
+                       {selectedShelterType === 'cooling' && (
+                         <span className="flex items-center gap-0.5 text-cyan-400">
+                           <span style={{ transform: `rotate(${getBearing(userPos.lat, userPos.lng, nearestCooling.lat, nearestCooling.lng)}deg)`, display: 'inline-block' }}>↑</span>
+                           {bearingToCompass(getBearing(userPos.lat, userPos.lng, nearestCooling.lat, nearestCooling.lng))}
+                         </span>
+                       )}
+                     </div>
+                     <button onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestCooling.lat},${nearestCooling.lng}`, "_blank"); }} className="text-blue-400 hover:text-blue-200 font-medium flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-blue-400/15 hover:shadow-[0_0_10px_rgba(96,165,250,0.5)] transition-all duration-200">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                              Directions</button>
+                   </div>
+                 </>
+               ) : <div className="text-[11px] text-neutral-500 mt-0.5">Detect location to calculate</div>}
+             </div>
+             {/* Library */}
+             <div
+               className={`border rounded-xl p-3 flex flex-col gap-1 cursor-pointer transition-all ${selectedShelterType === 'library' ? 'bg-[#121c17]/80 border-green-400/60 ring-1 ring-green-400/30' : 'bg-[#121c17]/40 border-green-500/20'}`}
+               onClick={() => userPos && nearestLibrary && setSelectedShelterType('library')}
+             >
+               <div className="text-[10px] font-bold text-green-400 uppercase tracking-wider flex items-center justify-between gap-1">
+                 <span>📚 Nearest Library</span>
+                 {selectedShelterType === 'library' && <span className="text-[9px] bg-green-500/20 text-green-300 px-1.5 py-0.5 rounded-full">Selected</span>}
+               </div>
+               {userPos && nearestLibrary ? (
+                 <>
+                   <div className="text-[13px] font-semibold text-white truncate mt-1">{nearestLibrary.name}</div>
+                   <div className="flex items-center justify-between mt-1 text-[11px]">
+                     <div className="flex items-center gap-2">
+                       <span className="font-semibold text-green-400">{nearestLibrary.distance.toFixed(2)} km</span>
+                       {selectedShelterType === 'library' && (
+                         <span className="flex items-center gap-0.5 text-cyan-400">
+                           <span style={{ transform: `rotate(${getBearing(userPos.lat, userPos.lng, nearestLibrary.lat, nearestLibrary.lng)}deg)`, display: 'inline-block' }}>↑</span>
+                           {bearingToCompass(getBearing(userPos.lat, userPos.lng, nearestLibrary.lat, nearestLibrary.lng))}
+                         </span>
+                       )}
+                     </div>
+                     <button onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${nearestLibrary.lat},${nearestLibrary.lng}`, "_blank"); }} className="text-green-400 hover:text-green-200 font-medium flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-green-400/15 hover:shadow-[0_0_10px_rgba(74,222,128,0.5)] transition-all duration-200">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                              Directions</button>
+                   </div>
+                 </>
+               ) : <div className="text-[11px] text-neutral-500 mt-0.5">Detect location to calculate</div>}
+             </div>
            </div>
         </div>
       </section>
@@ -1110,7 +1496,8 @@ export default function Home() {
       </section>
 
       {/*  The Team Section  */}
-      <section id="team" className="w-full max-w-[1200px] mx-auto py-32 px-6 md:px-12 border-b border-white/[0.05] scroll-mt-24">
+      <div id="team-sponsors"></div>
+      <section id="team" className="w-full max-w-[1200px] mx-auto py-20 px-6 md:px-12 border-b border-white/[0.05] scroll-mt-16">
         <div className="text-center mb-20">
           <p className="text-sm uppercase tracking-widest text-purple-400 mb-4">Behind SafeSpot</p>
           <h2 className="text-3xl md:text-[40px] font-medium tracking-tight text-white mb-4">Meet the codeXperts</h2>
