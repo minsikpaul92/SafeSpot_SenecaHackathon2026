@@ -1101,19 +1101,28 @@ export default function Home() {
 
                  <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
                   {/*  Your Location Bar  */}
-                  <div className="bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
-                    <div className="flex flex-col min-w-0">
+                  <div className="bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2.5 flex items-start justify-between gap-2">
+                    <div className="flex flex-col min-w-0 gap-1">
                       <span className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider">📍 Your Location</span>
-                      <span className="text-[12px] text-cyan-400 font-semibold mt-0.5 truncate">
-                        {userPos ? (locationDetail || locationText) : '--, --'}
-                      </span>
+                      {userPos ? (
+                        <>
+                          <span className="text-[12px] text-cyan-400 font-semibold truncate">
+                            {locationDetail || locationText || 'Locating...'}
+                          </span>
+                          <span className="text-[10px] font-mono text-neutral-400 tracking-tight">
+                            {userPos.lat.toFixed(5)}, {userPos.lng.toFixed(5)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-[12px] text-neutral-500">--, --</span>
+                      )}
                     </div>
                     <button
                       onClick={() => requestUserLocation(true)}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-cyan-400 transition-colors shrink-0"
+                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-cyan-400 transition-colors shrink-0 mt-0.5"
                       title="Detect Location"
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                         <circle cx="12" cy="12" r="4"/>
                         <path d="M13 4.069V2h-2v2.069A8.01 8.01 0 0 0 4.069 11H2v2h2.069A8.008 8.008 0 0 0 11 19.931V22h2v-2.069A8.007 8.007 0 0 0 19.931 13H22v-2h-2.069A8.008 8.008 0 0 0 13 4.069zM12 18c-3.309 0-6-2.691-6-6s2.691-6 6-6 6 2.691 6 6-2.691 6-6 6z"/>
                       </svg>
